@@ -56,14 +56,17 @@ function wrapGz(bytes, ttl) {
 }
 
 // 兼容分支：产物里没有 .gz 时现场压缩（仅过渡期会走到）
-function wrapText(body, ttl) {
+// 注意要先把压缩流读完再返回，直接返回 ReadableStream 在某些路径下会被
+// 边缘再压一层，变成 gzip(gzip(json))，浏览器解一次拿到的是二进制。
+async function wrapText(body, ttl) {
   const headers = baseHeaders(ttl);
   if (typeof CompressionStream === "function") {
     try {
-      const gz = new Response(body).body.pipeThrough(new CompressionStream("gzip"));
+      const stream = new Response(body).body.pipeThrough(new CompressionStream("gzip"));
+      const buf = await new Response(stream).arrayBuffer();
       headers["content-encoding"] = "gzip";
       headers.vary = "accept-encoding";
-      return new Response(gz, { status: 200, headers });
+      return new Response(buf, { status: 200, headers });
     } catch (e) {
       /* 回退明文 */
     }
