@@ -279,8 +279,22 @@ async function buildA() {
   }
   console.log(`[A] 分红到手 ${recs.length} 条`);
 
-  const byCode = new Map();
+  // 分页是按 SECURITY_CODE 排序的，同一代码有多条记录时顺序不稳定，
+  // 翻页有可能把同一条记录返回两次 —— 那会让该股股息率直接翻倍。先按关键字段去重。
+  const seenRec = new Set();
+  const deduped = [];
   for (const r of recs) {
+    const key = [r.SECURITY_CODE, r.REPORT_DATE, r.PRETAX_BONUS_RMB, r.EX_DIVIDEND_DATE].join("|");
+    if (seenRec.has(key)) continue;
+    seenRec.add(key);
+    deduped.push(r);
+  }
+  if (deduped.length !== recs.length) {
+    console.log(`[A] 去重：${recs.length} → ${deduped.length} 条（分页重复 ${recs.length - deduped.length} 条）`);
+  }
+
+  const byCode = new Map();
+  for (const r of deduped) {
     const code = r.SECURITY_CODE;
     if (!code) continue;
     const raw = num(r.PRETAX_BONUS_RMB, 0);
@@ -299,6 +313,8 @@ async function buildA() {
   const y0 = TODAY.getFullYear();
   const winFrom = new Date(TODAY.getTime() - 365 * DAY);
   let maxTs = 0;
+  // 高股息样本留档：下次跑完能在 Actions 日志里直接看到「谁高、由几笔构成」，便于判断真假
+  const hot = [];
 
   // 列式容器：字段聚在一起，gzip 比行式再省 20%
   const C = {
@@ -376,6 +392,19 @@ async function buildA() {
     // 从未分红的标的在股息率榜单里就是一堆 0 值噪音，不进快照（省 15% 体积）
     if (ttm <= 0 && last <= 0 && consec <= 0) continue;
 
+    if (ttm > 0.15) {
+      hot.push({
+        code, name: it.f14 || code, y: ttm, n: ttmCnt, px: price, sum: ttmSum,
+        detail: impl
+          .filter((x) => {
+            const d = x.ex ? new Date(x.ex + "T00:00:00") : null;
+            return d && !isNaN(d) && d >= winFrom && d <= TODAY;
+          })
+          .map((x) => `${x.period}派${x.dps.toFixed(3)}除${x.ex}`)
+          .join(" + ")
+      });
+    }
+
     // 列式编码：相同字段聚在一起，gzip 比行式再省 20%。
     // 收盘快照里的涨跌幅/PE/PB 就是当日定格的收盘数据，不存在「滞后误导」，全部保留。
     C.code.push(code);
@@ -397,6 +426,15 @@ async function buildA() {
     C.cs.push(consec);
     C.ys.push(years);
     C.fl.push(flags.join("|"));
+  }
+
+  // 高股息样本留档：打印出来便于人工判断是真高息还是数据问题
+  if (hot.length) {
+    hot.sort((a, b) => b.y - a.y);
+    console.log(`[A] 股息率 > 15% 共 ${hot.length} 只，前 8 只：`);
+    for (const h of hot.slice(0, 8)) {
+      console.log(`  ${h.code} ${h.name} ${(h.y * 100).toFixed(1)}% 价${h.px.toFixed(2)} 近12月${h.n}笔 合计${h.sum.toFixed(3)}元 → ${h.detail}`);
+    }
   }
 
   // f124 是行情时间(秒，东八区)，换算出这份快照对应的交易日
