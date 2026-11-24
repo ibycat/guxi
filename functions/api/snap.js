@@ -6,12 +6,15 @@
 //   - 边缘缓存 5 分钟，避免每个用户都回源 GitHub
 //   - 回源失败时返回上一次成功缓存的副本，宁可给旧数据也不要空白
 //
-// 关于压缩（踩过两个坑，都记在这里）：
+// 关于压缩，这里踩了三个坑，最终结论是「函数绝对不要碰压缩」：
 //   1) Pages Functions 免费版 CPU 上限 10ms/次调用，在函数里 gzip 大 JSON 有超限风险；
-//   2) 但「先压成完整字节、再带 content-encoding: gzip 返回」会让 Cloudflare 再压一层，
-//      变成 gzip(gzip(json))，浏览器只解一层就拿到二进制，r.json() 直接报 Unexpected token。
-//   实测可行的形态是**流式**：ReadableStream + content-encoding: gzip 不会被二次压缩。
-//   所以这里两条路都走流：预压缩文件包成流透传，没有预压缩时才现场压（也是流）。
+//   2) 在函数里压完、再带 content-encoding: gzip 返回，边缘会**再压一层**，
+//      变成 br(gzip(json))。浏览器只解一层，r.json() 拿到二进制直接报 Unexpected token；
+//   3) 带 Accept-Encoding 的浏览器请求，Cloudflare 本来就会自动压缩一次；
+//      不带该头的客户端（如 curl 默认）则不压缩、拿到明文。
+//   所以函数只负责原样输出 JSON 文本，压缩完全交给边缘，正确性和体积都能保证。
+//
+// 注意：data 分支里的 *.json.gz 是早期产物，现在没有用了，留着不影响运行。
 
 const SRC = "https://raw.githubusercontent.com/ibycat/guxi/data/";
 
@@ -38,63 +41,20 @@ function jsonError(error, status) {
   });
 }
 
-function baseHeaders(ttl) {
-  return Object.assign(
-    {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "public, max-age=" + ttl + ", s-maxage=" + ttl
-    },
-    CORS
-  );
-}
-
-// 已经压好的字节：包成流透传，别再压缩、也别再缓冲
-function wrapGz(bytes, ttl) {
-  const headers = baseHeaders(ttl);
-  headers["content-encoding"] = "gzip";
-  headers.vary = "accept-encoding";
-  return new Response(new Blob([bytes]).stream(), { status: 200, headers });
-}
-
-// 没有预压缩版本时才现场压，同样走流
-function wrapText(body, ttl) {
-  const headers = baseHeaders(ttl);
-  if (typeof CompressionStream === "function") {
-    try {
-      const gz = new Response(body).body.pipeThrough(new CompressionStream("gzip"));
-      headers["content-encoding"] = "gzip";
-      headers.vary = "accept-encoding";
-      return new Response(gz, { status: 200, headers });
-    } catch (e) {
-      /* 回退明文 */
-    }
-  }
-  return new Response(body, { status: 200, headers });
-}
-
-function build(payload, ttl) {
-  return payload.gz ? wrapGz(payload.gz, ttl) : wrapText(payload.text, ttl);
+function build(text, ttl) {
+  return new Response(text, {
+    status: 200,
+    headers: Object.assign(
+      {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "public, max-age=" + ttl + ", s-maxage=" + ttl
+      },
+      CORS
+    )
+  });
 }
 
 async function fetchSnapshot(f) {
-  // 优先取 Actions 预压缩的 .gz：省掉函数内压缩的 CPU
-  try {
-    const res = await fetch(SRC + f + ".json.gz", {
-      headers: { "user-agent": UA, accept: "*/*" },
-      signal: AbortSignal.timeout(25000),
-      cf: { cacheTtl: 0 }
-    });
-    if (res.ok) {
-      const buf = new Uint8Array(await res.arrayBuffer());
-      // 校验 gzip 魔术字节：万一上游已经把内容解压过，字节就不是 gzip 了
-      if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) return { gz: buf };
-      const txt = new TextDecoder().decode(buf);
-      if (txt.trim().charAt(0) === "{") return { text: txt };
-    }
-  } catch (e) {
-    /* 落到下面走未压缩分支 */
-  }
-
   const res = await fetch(SRC + f + ".json", {
     headers: { "user-agent": UA, accept: "*/*" },
     signal: AbortSignal.timeout(25000),
@@ -103,7 +63,7 @@ async function fetchSnapshot(f) {
   if (!res.ok) throw new Error("up_" + res.status);
   const body = await res.text();
   if (body.trim().charAt(0) !== "{") throw new Error("bad_body");
-  return { text: body };
+  return body;
 }
 
 export async function onRequest(context) {
@@ -131,9 +91,9 @@ export async function onRequest(context) {
     if (hit) return hit;
   }
 
-  let payload = null;
+  let text = null;
   try {
-    payload = await fetchSnapshot(f);
+    text = await fetchSnapshot(f);
   } catch (e) {
     // 回源失败：优先给上一次成功过的副本
     const stale = await cache.match(staleKey);
@@ -141,11 +101,11 @@ export async function onRequest(context) {
     return jsonError("snapshot_unavailable");
   }
 
-  const fresh = build(payload, TTL_FRESH);
+  const fresh = build(text, TTL_FRESH);
   context.waitUntil(cache.put(freshKey, fresh.clone()));
 
-  const stale2 = build(payload, TTL_STALE);
-  context.waitUntil(cache.put(staleKey, stale2.clone()));
+  const stale = build(text, TTL_STALE);
+  context.waitUntil(cache.put(staleKey, stale.clone()));
 
   return fresh;
 }
