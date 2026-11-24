@@ -192,7 +192,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
         <button class="tab" data-tab="avg3">近 3 年平均</button>
       </div>
       <div class="hint">
-        <span>股息率 = <b>已实施现金分红 ÷ 现价</b>，不含送转股</span>
+        <span>股息率 = <b>已实施现金分红 ÷ 收盘价</b>，不含送转股</span>
         <span>已剔除 <b id="hintFilter">ST / 次新</b></span>
         <span id="hintTime">—</span>
       </div>
@@ -231,17 +231,15 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
             <tr>
               <th style="width:34px">#</th>
               <th data-sort="name">名称 / 代码</th>
-              <th class="r" data-sort="price">现价</th>
-              <th class="r" data-sort="chg">涨跌</th>
+              <th class="r" data-sort="price">收盘价</th>
               <th class="r" data-sort="y">股息率</th>
               <th class="r" data-sort="consec" title="近 6 年内连续分红的年数，6+ 表示窗口内每年都有">连分年数</th>
               <th class="r" data-sort="payout">分红率</th>
               <th class="r" data-sort="mcap">总市值</th>
-              <th class="r" data-sort="pe">PE</th>
               <th>标记</th>
             </tr>
           </thead>
-          <tbody id="tbody"><tr><td colspan="10"><div class="skel">数据加载中…</div></td></tr></tbody>
+          <tbody id="tbody"><tr><td colspan="8"><div class="skel">数据加载中…</div></td></tr></tbody>
         </table>
       </div>
       <div class="pager">
@@ -918,11 +916,14 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       });
   }
 
+  var FORCE_REFRESH = false;
+
   function fetchSnapshot(name){
     // 10 分钟粒度的 evict key：绕开中间层缓存，又不至于每请求都新 URL
-    var bust = Math.floor(Date.now() / 600000);
+    var bust = Math.floor(Date.now() / 600000) + (FORCE_REFRESH ? "r" + Date.now() : "");
     // 同源代理优先（走 Cloudflare 边缘、国内快），失败再直连 GitHub raw
-    return getJson("/api/snap?f=" + name + "&v=3&t=" + bust)
+    var nc = FORCE_REFRESH ? "&nocache=1" : "";
+    return getJson("/api/snap?f=" + name + "&v=3" + nc + "&t=" + bust)
       .catch(function(err){
         console.warn("快照同源代理不可用，直连 raw", err);
         return getJson(SNAP_RAW + name + ".json?t=" + bust);
@@ -1039,12 +1040,12 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       setStatus("ok", "快照 " + stamp(S.loadedAt));
       $("subline").textContent = (S.hkAll ? "全部港股 " : "港股通 ") + rows.length.toLocaleString() +
         " 只 · 首屏 " + (ms / 1000).toFixed(2) + "s · 快照于 " + stamp(S.loadedAt) +
-        " · 点右上「刷新」拉实时";
+        " · 收盘 " + (pack.asof || "—");
       $("hintTime").textContent = "快照 " + stamp(S.loadedAt);
       renderAll();
     }).catch(function(err){
-      console.warn("港股快照不可用，回退实时", err);
-      return loadHKLive();
+      console.warn("港股快照不可用", err);
+      showSnapError(err);
     });
   }
 
@@ -1230,7 +1231,6 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       "<span>连续分红</span><span class='num'>" + (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") + "（近 " + HISTORY_YEARS + " 年 " + r.years + " 次）</span>" +
       "<span>分红率</span><span class='num'>" + (r.payout == null ? "—" : pct(r.payout, 0)) + "</span>" +
       "<span>总市值</span><span class='num'>" + fmtCap(r.mcap) + "</span>" +
-      "<span>PE / PB</span><span class='num'>" + (isFinite(r.pe) && r.pe !== 0 ? r.pe.toFixed(1) : "—") + " / " + (isFinite(r.pb) && r.pb !== 0 ? r.pb.toFixed(2) : "—") + "</span>" +
       "<span>所属行业</span><span>" + (r.ind || "—") + "</span>" +
       "<span>上市日期</span><span>" + (r.listDate ? (r.listDate.getFullYear() + "-" + String(r.listDate.getMonth() + 1).padStart(2, "0")) : "—") + "</span>";
   }
@@ -1241,7 +1241,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       var hint = detailState[r.code] === 3
         ? "明细加载失败，稍后重试或点右上「刷新」"
         : "正在加载分红明细…";
-      return '<tr class="detail"><td colspan="10"><div class="dbox">' +
+      return '<tr class="detail"><td colspan="8"><div class="dbox">' +
         "<div><h4>分红明细（每 10 股派息，税前）</h4>" +
         "<div style='color:var(--ink3);font-size:11.5px;padding:8px 0'>" + hint + "</div></div>" +
         "<div><h4>关键指标</h4><div class='kv'>" + kvHtml(r) + "</div></div></div></td></tr>";
@@ -1268,7 +1268,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       }
     }
     if (!rowsHtml) rowsHtml = empty;
-    return '<tr class="detail"><td colspan="10"><div class="dbox">' +
+    return '<tr class="detail"><td colspan="8"><div class="dbox">' +
       "<div><h4>" + title + "</h4><table class='dtable'><thead>" + head + "</thead><tbody>" + rowsHtml + "</tbody></table></div>" +
       "<div><h4>关键指标</h4><div class='kv'>" + kvHtml(r) + "</div></div></div></td></tr>";
   }
@@ -1293,25 +1293,20 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     var slice = list.slice(start, start + S.size);
 
     if (!total){
-      $("tbody").innerHTML = '<tr><td colspan="10"><div class="skel">没有符合条件的标的，试着放宽筛选</div></td></tr>';
+      $("tbody").innerHTML = '<tr><td colspan="8"><div class="skel">没有符合条件的标的，试着放宽筛选</div></td></tr>';
     } else {
       var html = "";
       for (var i = 0; i < slice.length; i++){
         var r = slice[i];
         var yv = currentYield(r);
-        var chg = r.chg;
-        var cls = !isFinite(chg) ? "flat" : (chg > 0 ? "up" : (chg < 0 ? "down" : "flat"));
-        var chgTxt = !isFinite(chg) ? "—" : (chg > 0 ? "+" : "") + chg.toFixed(2) + "%";
         html += '<tr class="row" data-code="' + r.code + '">' +
           '<td class="rank' + (i < 3 && S.sortKey === "y" && S.sortDir === -1 ? " top" : "") + '">' + (start + i + 1) + "</td>" +
           '<td><span class="nm">' + r.name + '</span><span class="code num">' + r.code + '</span><span class="ind hide-sm">' + (r.ind || "") + "</span></td>" +
           '<td class="r num">' + fmtPrice(r.price) + "</td>" +
-          '<td class="r num ' + cls + '">' + chgTxt + "</td>" +
           '<td class="r"><span class="yield num">' + pct(yv) + "</span></td>" +
           '<td class="r num">' + (S.historyReady ? (r.consec ? (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") : "—") : "<span style=\"color:var(--ink3)\">…</span>") + "</td>" +
           '<td class="r num">' + (r.payout == null ? "—" : pct(r.payout, 0)) + "</td>" +
           '<td class="r num">' + fmtCap(r.mcap) + "</td>" +
-          '<td class="r num">' + (isFinite(r.pe) && r.pe !== 0 ? r.pe.toFixed(1) : "—") + "</td>" +
           "<td>" + tagHtml(r.flags) + "</td></tr>";
         if (S.open[r.code]) html += detailHtml(r);
       }
@@ -1414,8 +1409,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   function loadFull(){
     if (S.market === "hk") return loadHK();
     return loadASnap().catch(function(err){
-      console.warn("A 股快照不可用，回退实时", err);
-      return loadALive();
+      console.warn("A 股快照不可用", err);
+      showSnapError(err);
     });
   }
 
@@ -1436,7 +1431,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       progress(false);
       setStatus("ok", "快照 " + stamp(S.loadedAt));
       $("subline").textContent = "全市场 " + rows.length.toLocaleString() + " 只 · 首屏 " +
-        (ms / 1000).toFixed(2) + "s · 快照于 " + stamp(S.loadedAt) + " · 点右上「刷新」拉实时";
+        (ms / 1000).toFixed(2) + "s · 收盘 " + (pack.asof || "—");
       $("hintTime").textContent = "快照 " + stamp(S.loadedAt);
       renderAll();
     });
@@ -1487,7 +1482,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
         S.historyReady = true;
         saveCache();
         progress(false);
-        $("subline").textContent = "全市场 " + S.rows.length.toLocaleString() + " 只 · 数据源 东方财富 · 每 5 分钟自动刷新" + (fails ? " · " + fails + " 个分页失败" : "");
+        $("subline").textContent = "全市场 " + S.rows.length.toLocaleString() + " 只 · 数据源 东方财富 · 收盘 " + (pack.asof || "—");
         renderAll();
       }).catch(function(err){
         progress(false);
@@ -1497,58 +1492,32 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     });
   }
 
+  // 页面不再拉实时行情：快照每天更新一次，「刷新」只是重新取一次快照（绕过 5 分钟边缘缓存）
   function refreshQuotes(){
     if (refreshing) return;
-    if (S.market === "hk"){
-      loadHKLive().catch(function(err){
-        progress(false);
-        setStatus("err", "实时失败");
-        console.warn(err);
-      });
-      return;
-    }
     refreshing = true;
     var btn = $("refreshBtn");
     btn.disabled = true;
-    setStatus("load", "刷新行情");
+    FORCE_REFRESH = true;
+    setStatus("load", "刷新快照");
     progress(true);
-    loadQuotes(function(d, t){
-      $("subline").textContent = "刷新行情 " + d + "/" + t + " 页…";
-    }).then(function(quotes){
-      var map = {};
-      for (var i = 0; i < quotes.length; i++) map[quotes[i].f12] = quotes[i];
-      var n = 0;
-      for (var j = 0; j < S.rows.length; j++){
-        var r = S.rows[j];
-        var q = map[r.code];
-        if (q){
-          var oldP = r.price;
-          var newP = Number(q.f2) || r.price;
-          r.price = newP;
-          r.chg = Number(q.f3);
-          r.pe = Number(q.f9);
-          r.pb = Number(q.f23);
-          r.mcap = Number(q.f20);
-          // 快照行不带分红明细，用价格比例换算股息率（分红金额本身没变，按比例缩放是精确的）
-          if (!r.records.length && oldP > 0 && newP > 0 && oldP !== newP){
-            var k = oldP / newP;
-            r.ttm *= k; r.last *= k; r.avg3 *= k;
-          }
-          n++;
-        }
-      }
-      recomputeYields();
-      S.loadedAt = Date.now();
-      saveCache();
-      progress(false);
-      setStatus("ok", "已更新 " + stamp(S.loadedAt));
-      $("hintTime").textContent = "更新于 " + stamp(S.loadedAt);
-      renderAll();
-    }).catch(function(err){
-      progress(false);
-      setStatus("err", "刷新失败");
+    loadFull().catch(function(err){
       console.warn(err);
-    }).then(function(){ btn.disabled = false; refreshing = false; });
+    }).then(function(){
+      FORCE_REFRESH = false;
+      progress(false);
+      btn.disabled = false;
+      refreshing = false;
+    });
+  }
+
+  function showSnapError(err){
+    progress(false);
+    setStatus("err", "快照不可用");
+    $("subline").textContent = "快照暂时取不到";
+    $("tbody").innerHTML = '<tr><td colspan="8"><div class="error">快照数据暂时取不到（' +
+      (err && err.message ? err.message : "未知错误") +
+      "）。<br>页面数据每天更新一次，稍后再点右上「刷新」。</div></td></tr>";
   }
 
   function recomputeYields(){
@@ -1577,22 +1546,19 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   function exportCsv(){
     var list = filtered();
-    var head = ["排名","代码","名称","现价","涨跌幅","股息率TTM","上年年报","近3年均值","连续分红年数","近"+HISTORY_YEARS+"年分红次数","分红率","总市值(亿元)","PE","PB","行业","标记"];
+    var head = ["排名","代码","名称","收盘价","股息率TTM","上年年报","近3年均值","连续分红年数","近"+HISTORY_YEARS+"年分红次数","分红率","总市值(亿元)","行业","标记"];
     var lines = [head.join(",")];
     for (var i = 0; i < list.length; i++){
       var r = list[i];
       lines.push([
         i + 1, r.code, '"' + r.name.replace(/"/g, '""') + '"',
         r.price.toFixed(2),
-        isFinite(r.chg) ? r.chg.toFixed(2) : "",
         (r.ttm * 100).toFixed(2),
         (r.last * 100).toFixed(2),
         (r.avg3 * 100).toFixed(2),
         r.consec, r.years,
         r.payout == null ? "" : (r.payout * 100).toFixed(1),
         Math.round(r.mcap / 1e8),
-        isFinite(r.pe) ? r.pe.toFixed(2) : "",
-        isFinite(r.pb) ? r.pb.toFixed(2) : "",
         '"' + r.ind + '"',
         '"' + r.flags.map(function(f){ return f[1]; }).join(" ") + '"'
       ].join(","));
@@ -1678,13 +1644,13 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       $("hkAllWrap").style.display = (mk === "hk") ? "inline-flex" : "none";
       $("hintFilter").textContent = (mk === "hk") ? "仙股" : (S.exST ? "ST / " : "") + "次新";
       $("mkTip").textContent = (mk === "hk") ? "仅港币现金派息计入股息率；美元/人民币派息单列标记" : "";
-      $("tbody").innerHTML = '<tr><td colspan="10"><div class="skel">数据加载中…</div></td></tr>';
+      $("tbody").innerHTML = '<tr><td colspan="8"><div class="skel">数据加载中…</div></td></tr>';
       setStatus("load", "加载中");
       loadFull().catch(function(err){
         progress(false);
         setStatus("err", "加载失败");
         $("subline").textContent = "数据加载失败";
-        $("tbody").innerHTML = '<tr><td colspan="10"><div class="error">加载失败：' + (err && err.message ? err.message : "未知错误") + "</div></td></tr>";
+        $("tbody").innerHTML = '<tr><td colspan="8"><div class="error">加载失败：' + (err && err.message ? err.message : "未知错误") + "</div></td></tr>";
       });
     });
 
@@ -1693,7 +1659,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       if (S.market !== "hk") return;
       S.rows = [];
       S.page = 1;
-      $("tbody").innerHTML = '<tr><td colspan="10"><div class="skel">数据加载中…</div></td></tr>';
+      $("tbody").innerHTML = '<tr><td colspan="8"><div class="skel">数据加载中…</div></td></tr>';
       setStatus("load", "加载中");
       loadFull().catch(function(err){ progress(false); setStatus("err", "加载失败"); console.warn(err); });
     });
@@ -1728,9 +1694,9 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       progress(false);
       setStatus("err", "加载失败");
       $("subline").textContent = "数据加载失败";
-      $("tbody").innerHTML = '<tr><td colspan="10"><div class="error">无法连接东方财富数据接口（' +
+      $("tbody").innerHTML = '<tr><td colspan="8"><div class="error">快照数据暂时取不到（' +
         (err && err.message ? err.message : "未知错误") +
-        "）。<br>请检查网络后点击右上角「刷新」重试。若浏览器拦截了跨域脚本，可尝试关闭广告拦截插件。</div></td></tr>";
+        "）。<br>页面数据每天收盘后更新一次，稍后再试。</div></td></tr>";
     });
   }
 
@@ -1739,11 +1705,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   window.__dash = { refresh: refreshQuotes, state: S };
 
-  setInterval(function(){
-    if (document.hidden) return;
-    if (!S.rows.length) return;
-    refreshQuotes();
-  }, 5 * 60 * 1000);
+  // 自动刷新已移除：数据每天收盘后更新一次，不再定时打接口
 })();
 </script>
 </body>

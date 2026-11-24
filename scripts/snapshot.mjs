@@ -44,9 +44,9 @@ const NOW = new Date();
 const TODAY = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
 
 const FS_A = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23";
-const FS_A_FIELDS = "f2,f3,f9,f12,f14,f20,f23,f26,f100";
+const FS_A_FIELDS = "f2,f18,f9,f12,f14,f20,f26,f100,f124";
 const FS_HK_GGT = "b:DLMK0146";
-const FS_HK_FIELDS = "f2,f3,f9,f12,f14,f20,f100";
+const FS_HK_FIELDS = "f2,f18,f9,f12,f14,f20,f100,f124";
 
 // 港股派息币种很杂：实测 665 只港股通里，265 只只用人民币派息、28 只只用美元。
 // 只算港币会把近一半标的判成「无分红」，所以在原始记录上折算成港币再计算。
@@ -270,6 +270,8 @@ async function buildA() {
 
   const y0 = TODAY.getFullYear();
   const winFrom = new Date(TODAY.getTime() - 365 * DAY);
+  let maxTs = 0;
+
   // 列式容器：字段聚在一起，gzip 比行式再省 20%
   const C = {
     code: [], name: [], px: [], mc: [], ind: [], ld: [],
@@ -287,7 +289,10 @@ async function buildA() {
   for (const it of q.rows) {
     const code = it.f12;
     if (!code) continue;
-    const price = num(it.f2, 0);
+    const qts = num(it.f124, 0);
+    if (qts > maxTs) maxTs = qts;
+    // 只取收盘价：f2 在收盘后即当日收盘，停牌时回退 f18（昨收）
+    const price = num(it.f2, 0) || num(it.f18, 0);
     if (!(price > 0)) continue;
     const ind = String(it.f100 || "").replace(/[ⅠⅡⅢ]+$/, "");
 
@@ -362,8 +367,11 @@ async function buildA() {
     C.fl.push(flags.join("|"));
   }
 
+  // f124 是行情时间(秒，东八区)，换算出这份快照对应的交易日
+  const asof = maxTs > 0 ? new Date((maxTs + 8 * 3600) * 1000).toISOString().slice(0, 10) : null;
+
   const pack = {
-    v: 3, ts: Date.now(), market: "a", years: HISTORY_YEARS,
+    v: 3, ts: Date.now(), market: "a", years: HISTORY_YEARS, asof,
     partial: partialA, inds: indList,
     code: C.code.join("|"),
     name: C.name.join("|"),
@@ -431,6 +439,13 @@ async function buildHK() {
   }
   const partialHK = q.okPages < q.pages ? `${q.okPages}/${q.pages}` : "";
 
+  let hkMaxTs = 0;
+  for (const it of q.rows) {
+    const qts = num(it.f124, 0);
+    if (qts > hkMaxTs) hkMaxTs = qts;
+  }
+  const hkAsof = hkMaxTs > 0 ? new Date((hkMaxTs + 8 * 3600) * 1000).toISOString().slice(0, 10) : null;
+
   const from = ymd(new Date(TODAY.getFullYear() - HISTORY_YEARS, 0, 1));
   const divs = await fetchHKDiv(from);
 
@@ -453,7 +468,7 @@ async function buildHK() {
   for (const it of q.rows) {
     const c = it.f12;
     if (!/^0\d{4}$/.test(c || "")) continue;
-    const price = num(it.f2, 0);
+    const price = num(it.f2, 0) || num(it.f18, 0);
     if (!(price > 0)) continue;
 
     const rr = byCode.get(c) || [];
@@ -506,7 +521,7 @@ async function buildHK() {
     ]);
   }
   console.log(`[HK] 计算完成 ${rows.length} 行`);
-  return { v: 2, ts: Date.now(), market: "hk", years: HISTORY_YEARS, partial: partialHK, rows };
+  return { v: 2, ts: Date.now(), market: "hk", years: HISTORY_YEARS, asof: hkAsof, partial: partialHK, rows };
 }
 
 /* ------------------------------ 主流程 ------------------------------ */

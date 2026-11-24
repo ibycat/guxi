@@ -72,8 +72,11 @@ export async function onRequest(context) {
   const freshKey = new Request("https://snap.internal/fresh/" + f + "/" + ver);
   const staleKey = new Request("https://snap.internal/stale/" + f + "/" + ver);
 
-  const hit = await cache.match(freshKey);
-  if (hit) return hit;
+  // 手动刷新时带 nocache=1，跳过边缘缓存直接回源
+  if (u.searchParams.get("nocache") !== "1") {
+    const hit = await cache.match(freshKey);
+    if (hit) return hit;
+  }
 
   let text = null;
   try {

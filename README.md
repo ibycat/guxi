@@ -118,11 +118,12 @@ A 股与港股用的是**两张不同的分红报表**（`RPT_SHAREBONUS_DET` �
 站点默认读**预生成快照**，实时接口只作兜底。
 
 ```
-GitHub Actions (cron */30) ──► scripts/snapshot.mjs ──► data 分支（单提交 force-push）
+GitHub Actions (cron 每日 2 次) ──► scripts/snapshot.mjs ──► data 分支（单提交 force-push）
                                                               │
                                          /api/snap 边缘代理 ◄──┘
 ```
 
+- **只抓收盘数据，不追实时**：每天跑两次（16:10 收盘后、07:35 开盘前兜底），抓的是静态收盘价而不是盘中行情。页面也不再拉实时行情，「刷新」只是重新取一次快照。这样上游请求量与访问量彻底脱钩，是最不容易被限流的做法
 - 为什么要用 Actions 而不用 Cloudflare Cron：Pages Functions 没有 Cron Trigger；更关键的是**东财对 Cloudflare 出口 IP 有风控**，抓多了直接 502，而 GitHub Runner 的出口 IP 完全不同
 - 为什么快照不提交到 `main`：Pages 免费版每月只有 **500 次构建**，每 30 分钟一次会打爆配额。改为独立的 `data` 分支 + 单提交 force-push，既不影响构建配额，也不会撑大 `main` 的历史
 - 为什么还要 `/api/snap` 代理：`raw.githubusercontent.com` 在国内又慢又不稳（1.5MB 实测要 50 秒），同源代理走 Cloudflare 边缘，顺手 gzip（A 股 1.47MB → 360KB，港股 196KB → 44KB）
