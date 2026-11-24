@@ -150,35 +150,49 @@ async function loadCodes() {
   return (pack.rows || []).map((r) => r.c).filter(Boolean);
 }
 
+// 读取上一次的产物，用于增量续跑：已经抓成功的代码不再重复抓，
+// 否则分批跑的时候每一批都会把前一批的结果覆盖掉。
+function loadExisting() {
+  const p = path.join(OUT_DIR, "fundmeta.json");
+  if (!fs.existsSync(p)) return new Map();
+  try {
+    const d = JSON.parse(fs.readFileSync(p, "utf8"));
+    const m = new Map();
+    for (const r of d.rows || []) {
+      if (r && r.c && !r.err) m.set(r.c, r);
+    }
+    return m;
+  } catch (e) {
+    return new Map();
+  }
+}
+
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   const all = await loadCodes();
   const limit = arg("limit", 300);
-  // 跨类型抽样：按固定步长取，避免前 300 只全是同一家公司的同一类基金
-  let codes;
-  if (limit > 0 && limit < all.length) {
-    const step = Math.floor(all.length / limit);
-    codes = [];
-    for (let i = 0; i < all.length && codes.length < limit; i += step) codes.push(all[i]);
-  } else {
-    codes = all;
-  }
-  console.log("[META] 待抓 " + codes.length + " / " + all.length + " 只");
+  const done = loadExisting();
+  // 已经抓过的跳过，每次只处理「还没抓的」前 N 只 —— 这样分批跑能自然接续
+  const pending = all.filter((c) => !done.has(c));
+  console.log(
+    "[META] 全量 " + all.length + " 只，已覆盖 " + done.size + " 只，本次待抓 " + Math.min(limit > 0 ? limit : pending.length, pending.length)
+  );
+  const codes = limit > 0 ? pending.slice(0, limit) : pending;
 
   const rows = [];
-  let done = 0, ok = 0;
+  let n = 0, ok = 0;
   let idx = 0;
 
   async function worker() {
     while (idx < codes.length) {
       const code = codes[idx++];
       const rec = await fetchCode(code);
-      done++;
+      n++;
       if (!rec.err) ok++;
       rows.push(rec);
-      if (done % 25 === 0 || done === codes.length) {
-        console.log("  进度 " + done + "/" + codes.length + "，成功 " + ok);
+      if (n % 25 === 0 || n === codes.length) {
+        console.log("  进度 " + n + "/" + codes.length + "，成功 " + ok);
       }
       await sleep(120);
     }
@@ -187,38 +201,56 @@ async function main() {
   await Promise.all([worker(), worker(), worker()]);
   console.log("[META] 抓取完成：成功 " + ok + " / " + rows.length);
 
-  // 按基金全称合并份额规模：同一只基金的 A/C/E 等份额规模相加
+  // 合并：本次成功的写入，失败的丢弃（下次自动重试），历史记录保留
+  const merged = new Map(done);
+  for (const r of rows) {
+    if (r.err) continue;
+    merged.set(r.c, r);
+  }
+  const allRows = Array.from(merged.values());
+
+  // 按基金全称合并份额规模：同一只基金的 A/C/E 等份额规模相加。
+  // 必须基于「全量已抓记录」计算 —— 只用本批算的话，分批跑时合并值会偏小。
   const groupSum = new Map();
   const groupCnt = new Map();
-  for (const r of rows) {
+  for (const r of allRows) {
     if (!r.full) continue;
     groupCnt.set(r.full, (groupCnt.get(r.full) || 0) + 1);
     if (r.s == null) continue;
     groupSum.set(r.full, (groupSum.get(r.full) || 0) + r.s);
   }
-  for (const r of rows) {
+  for (const r of allRows) {
     r.gs = r.full && r.s != null ? Math.round(groupSum.get(r.full) * 100) / 100 : null;
     r.gn = r.full ? groupCnt.get(r.full) : 0;
   }
 
-  // 解析质量自检：关键字段的空值率，用来判断 HTML 结构有没有变
-  const total = rows.filter((r) => !r.err).length || 1;
-  const miss = (f) => rows.filter((r) => !r.err && (r[f] == null || r[f] === "" || r[f] === undefined)).length;
-  console.log("[META] 空值率：全称 " + ((miss("full") / total) * 100).toFixed(1) + "%" +
+  // 解析质量自检：只看本批，用来判断 HTML 结构有没有变
+  const batch = rows.filter((r) => !r.err);
+  const total = batch.length || 1;
+  const miss = (f) => batch.filter((r) => r[f] == null || r[f] === "").length;
+  console.log("[META] 本批空值率：全称 " + ((miss("full") / total) * 100).toFixed(1) + "%" +
     " / 规模 " + ((miss("s") / total) * 100).toFixed(1) + "%" +
-    " / 经理 " + ((rows.filter((r) => !r.err && (!r.mgr || !r.mgr.length)).length / total) * 100).toFixed(1) + "%" +
+    " / 经理 " + ((batch.filter((r) => !r.mgr || !r.mgr.length).length / total) * 100).toFixed(1) + "%" +
     " / 成立日 " + ((miss("est") / total) * 100).toFixed(1) + "%");
 
-  const sample = rows.filter((r) => !r.err).slice(0, 3);
-  console.log("[META] 样本：");
-  for (const s of sample) console.log("  " + JSON.stringify(s));
+  for (const s of batch.slice(0, 3)) console.log("  " + JSON.stringify(s));
 
-  if (!rows.filter((r) => !r.err).length) throw new Error("全部抓取失败，放弃写入");
+  if (!allRows.length) throw new Error("一条都没抓成功，放弃写入");
 
-  const pack = { v: 1, ts: Date.now(), count: rows.length, mode: limit > 0 ? "sample" : "full", rows };
+  const pack = {
+    v: 1,
+    ts: Date.now(),
+    total: all.length,
+    count: allRows.length,
+    mode: allRows.length >= all.length ? "full" : "partial",
+    rows: allRows
+  };
   const text = JSON.stringify(pack);
   fs.writeFileSync(path.join(OUT_DIR, "fundmeta.json"), text);
-  console.log("OK fundmeta.json  " + (text.length / 1024).toFixed(0) + "KB  " + rows.length + " 行");
+  console.log(
+    "OK fundmeta.json  " + (text.length / 1024).toFixed(0) + "KB  覆盖 " +
+    allRows.length + " / " + all.length + " 只"
+  );
 }
 
 main().catch((e) => {
