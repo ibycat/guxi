@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A股股息率排行 · 实时看板</title>
+<style>
+:root{
+  --bg:#F6F6F3; --panel:#FFFFFF; --ink:#17181A; --ink2:#5B6068; --ink3:#8B9099;
+  --line:#E4E3DE; --line2:#EEEDE9; --chip:#F1F0EC;
+  --red:#CE3A3A; --green:#12855A; --accent:#A8392C;
+  --warn-bg:#FBF0DC; --warn-ink:#8A5A0B;
+  --good-bg:#E7F3EC; --good-ink:#0E6B46;
+  --bad-bg:#FBEAE9; --bad-ink:#9C2B26;
+  --info-bg:#EDF0F5; --info-ink:#3D4A5C;
+  --r:10px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:13px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+.num{font-variant-numeric:tabular-nums; font-feature-settings:"tnum";}
+.wrap{max-width:1280px; margin:0 auto; padding:0 20px 40px;}
+
+header{position:sticky; top:0; z-index:20; background:rgba(246,246,243,.94); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
+.hd{max-width:1280px; margin:0 auto; padding:14px 20px 10px; display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+.hd h1{font-size:17px; font-weight:600; margin:0; letter-spacing:-.2px;}
+.hd .sub{font-size:12px; color:var(--ink3); margin-top:3px;}
+.hd-right{display:flex; align-items:center; gap:10px;}
+.status{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink2);}
+.dot{width:7px; height:7px; border-radius:50%; background:var(--ink3); flex:none;}
+.dot.load{background:#D89B2B;} .dot.ok{background:var(--green);} .dot.err{background:var(--red);}
+.btn{appearance:none; border:1px solid var(--line); background:var(--panel); color:var(--ink); font-size:12px; padding:6px 12px; border-radius:7px; cursor:pointer; font-family:inherit;}
+.btn:hover{border-color:#CFCEC8;}
+.btn:disabled{opacity:.5; cursor:default;}
+.prog{height:2px; background:transparent; overflow:hidden;}
+.prog i{display:block; height:2px; width:0%; background:var(--accent); transition:width .3s ease;}
+.prog.on i{width:100%; animation:flow 1.4s ease-in-out infinite; transform-origin:left;}
+@keyframes flow{0%{transform:translateX(-100%) scaleX(.3);}100%{transform:translateX(100%) scaleX(.3);}}
+
+.metrics{display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; margin:18px 0 14px;}
+.metric{background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:11px 13px;}
+.metric .k{font-size:11.5px; color:var(--ink3); display:flex; align-items:center; gap:4px;}
+.metric .v{font-size:22px; font-weight:600; letter-spacing:-.4px; margin-top:3px; line-height:1.15;}
+.metric .v small{font-size:12px; font-weight:400; color:var(--ink3); margin-left:2px;}
+
+.layout{display:grid; grid-template-columns:minmax(0,1fr) 292px; gap:14px; align-items:start;}
+.panel{background:var(--panel); border:1px solid var(--line); border-radius:var(--r);}
+
+.tabs{display:flex; align-items:center; gap:2px; padding:10px 12px 0; border-bottom:1px solid var(--line2); flex-wrap:wrap;}
+.tab{appearance:none; border:0; background:transparent; font-family:inherit; font-size:13px; color:var(--ink2); padding:6px 10px 9px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px;}
+.tab.on{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
+.tab .t{font-size:11px; color:var(--ink3); font-weight:400; margin-left:4px;}
+.hint{padding:7px 12px; font-size:11.5px; color:var(--ink3); border-bottom:1px solid var(--line2); display:flex; gap:14px; flex-wrap:wrap;}
+.hint b{font-weight:500; color:var(--ink2);}
+
+.toolbar{display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line2); flex-wrap:wrap;}
+.search{position:relative; flex:1 1 150px; min-width:130px;}
+.search input{width:100%; font-family:inherit; font-size:12.5px; padding:6px 9px 6px 26px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--ink); outline:none;}
+.search input:focus{border-color:#C6C4BD; background:var(--panel);}
+.search svg{position:absolute; left:8px; top:50%; transform:translateY(-50%); opacity:.45;}
+select.mini{font-family:inherit; font-size:12.5px; padding:6px 6px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--ink); outline:none; cursor:pointer;}
+.chk{display:inline-flex; align-items:center; gap:5px; font-size:12.5px; color:var(--ink2); cursor:pointer; user-select:none; padding:4px 2px;}
+.chk input{margin:0; accent-color:var(--accent);}
+.presets{display:flex; gap:2px; background:var(--chip); border-radius:7px; padding:2px;}
+.presets button{appearance:none; border:0; background:transparent; font-family:inherit; font-size:12px; color:var(--ink2); padding:4px 9px; border-radius:5px; cursor:pointer; white-space:nowrap;}
+.presets button.on{background:var(--panel); color:var(--ink); font-weight:500; box-shadow:0 1px 2px rgba(0,0,0,.06);}
+
+.tablewrap{overflow-x:auto;}
+table{width:100%; border-collapse:collapse; font-size:12.5px;}
+thead th{position:sticky; top:0; background:var(--panel); text-align:left; font-weight:500; color:var(--ink3); font-size:11.5px; padding:8px 8px; border-bottom:1px solid var(--line); white-space:nowrap; cursor:pointer; user-select:none;}
+thead th:hover{color:var(--ink);}
+thead th.r{text-align:right;}
+thead th .ar{font-size:9px; margin-left:2px; opacity:.7;}
+thead th.sorted-desc::after{content:" ↓"; font-size:10px; opacity:.65;}
+thead th.sorted-asc::after{content:" ↑"; font-size:10px; opacity:.65;}
+tbody td{padding:8px; border-bottom:1px solid var(--line2); vertical-align:middle; white-space:nowrap;}
+tbody tr.row{cursor:pointer;}
+tbody tr.row:hover{background:#FBFAF6;}
+td.r{text-align:right;}
+.rank{color:var(--ink3); font-size:11.5px; width:34px;}
+.rank.top{color:var(--accent); font-weight:600;}
+.nm{font-weight:500;}
+td .code{color:var(--ink3); font-weight:400; font-size:11px; margin-left:6px;}
+td .ind{color:var(--ink3); font-size:10.5px; margin-left:6px;}
+.yield{font-size:14.5px; font-weight:600; letter-spacing:-.2px;}
+.up{color:var(--red);} .down{color:var(--green);} .flat{color:var(--ink3);}
+.tag{display:inline-block; font-size:10.5px; padding:1.5px 6px; border-radius:4px; margin-right:3px; line-height:1.5; white-space:nowrap;}
+.tag.good{background:var(--good-bg); color:var(--good-ink);}
+.tag.warn{background:var(--warn-bg); color:var(--warn-ink);}
+.tag.bad{background:var(--bad-bg); color:var(--bad-ink);}
+.tag.info{background:var(--info-bg); color:var(--info-ink);}
+.tag.none{background:var(--chip); color:var(--ink3);}
+
+tr.detail td{background:#FCFBF8; border-bottom:1px solid var(--line); padding:0; white-space:normal;}
+.dbox{display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:18px; padding:14px 16px;}
+.dbox h4{margin:0 0 7px; font-size:11.5px; font-weight:500; color:var(--ink3);}
+.dtable{width:100%; border-collapse:collapse; font-size:11.5px;}
+.dtable th{text-align:left; color:var(--ink3); font-weight:400; padding:3px 6px 3px 0; border-bottom:1px solid var(--line2);}
+.dtable td{padding:4px 6px 4px 0; border-bottom:1px solid var(--line2);}
+.kv{display:grid; grid-template-columns:76px 1fr; gap:4px 8px; font-size:11.5px;}
+.kv span:nth-child(odd){color:var(--ink3);}
+
+.pager{display:flex; align-items:center; justify-content:space-between; padding:9px 12px; font-size:12px; color:var(--ink2); flex-wrap:wrap; gap:8px;}
+.pgbtns{display:flex; gap:4px; align-items:center;}
+.pgbtn{min-width:26px; height:26px; padding:0 6px; border:1px solid var(--line); background:var(--panel); border-radius:6px; font-size:12px; color:var(--ink2); cursor:pointer; font-family:inherit;}
+.pgbtn.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+.pgbtn:disabled{opacity:.4; cursor:default;}
+
+.side{padding:12px 13px 14px; position:sticky; top:74px;}
+.side h3{margin:0 0 2px; font-size:13px; font-weight:600;}
+.side .sd{font-size:11px; color:var(--ink3); margin-bottom:12px;}
+.bar-row{display:grid; grid-template-columns:74px 1fr 44px; gap:7px; align-items:center; margin-bottom:7px; font-size:11.5px;}
+.bar-label{color:var(--ink2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.bar-track{height:7px; background:var(--chip); border-radius:3px; overflow:hidden;}
+.bar-track i{display:block; height:100%; background:#B9736A; border-radius:3px;}
+.bar-val{text-align:right; color:var(--ink); font-weight:500;}
+.side .note{font-size:11px; color:var(--ink3); line-height:1.6; margin-top:14px; padding-top:12px; border-top:1px solid var(--line2);}
+.side .note b{color:var(--ink2); font-weight:500;}
+
+.error{margin:14px; padding:14px; border:1px solid #EBD3D0; background:#FDF6F5; border-radius:8px; color:#8C3A32; font-size:12.5px; line-height:1.7;}
+.skel{height:210px; display:flex; align-items:center; justify-content:center; color:var(--ink3); font-size:12.5px; gap:8px;}
+
+footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; color:var(--ink3); line-height:1.8;}
+
+@media (max-width:1080px){
+  .layout{grid-template-columns:minmax(0,1fr);}
+  .side{position:static; order:2;}
+  .metrics{grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+@media (max-width:720px){
+  .wrap{padding:0 12px 30px;} .hd{padding:12px 12px 8px;}
+  .metrics{grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;}
+  .metric .v{font-size:19px;}
+  .hide-sm{display:none;}
+  .dbox{grid-template-columns:1fr;}
+  .hd-right{width:100%; justify-content:space-between;}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hd">
+    <div>
+      <h1>A股股息率排行</h1>
+      <div class="sub" id="subline">正在连接行情与分红数据…</div>
+    </div>
+    <div class="hd-right">
+      <div class="status"><span class="dot" id="dot"></span><span id="statusText">准备中</span></div>
+      <button class="btn" id="refreshBtn">刷新</button>
+    </div>
+  </div>
+  <div class="prog" id="prog"><i></i></div>
+</header>
+
+<div class="wrap">
+  <section class="metrics" id="metrics">
+    <div class="metric"><div class="k">有效样本</div><div class="v num">—</div></div>
+    <div class="metric"><div class="k">全 A 中位数</div><div class="v num">—</div></div>
+    <div class="metric"><div class="k">股息率 ≥ 5%</div><div class="v num">—</div></div>
+    <div class="metric"><div class="k">连续分红 ≥ 5 年</div><div class="v num">—</div></div>
+    <div class="metric"><div class="k">待核验</div><div class="v num">—</div></div>
+  </section>
+
+  <div class="layout">
+    <section class="panel">
+      <div class="tabs">
+        <button class="tab on" data-tab="ttm">TTM 滚动 12 个月</button>
+        <button class="tab" data-tab="last">上年年报</button>
+        <button class="tab" data-tab="avg3">近 3 年平均</button>
+      </div>
+      <div class="hint">
+        <span>股息率 = <b>已实施现金分红 ÷ 现价</b>，不含送转股</span>
+        <span>已剔除 <b id="hintFilter">ST / 次新</b></span>
+        <span id="hintTime">—</span>
+      </div>
+      <div class="toolbar">
+        <div class="search">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+          <input id="q" placeholder="搜索名称 / 代码" autocomplete="off">
+        </div>
+        <div class="presets" id="presets">
+          <button class="on" data-preset="all">全部</button>
+          <button data-preset="steady">稳健高息</button>
+          <button data-preset="cycle">周期高息</button>
+          <button data-preset="check">待核验</button>
+        </div>
+        <select class="mini" id="ind"><option value="">全部行业</option></select>
+        <select class="mini" id="ymin">
+          <option value="0">股息率不限</option>
+          <option value="0.03">≥ 3%</option>
+          <option value="0.04">≥ 4%</option>
+          <option value="0.05">≥ 5%</option>
+          <option value="0.07">≥ 7%</option>
+        </select>
+        <select class="mini" id="capmin">
+          <option value="0">市值不限</option>
+          <option value="5e9">≥ 50 亿</option>
+          <option value="1e10">≥ 100 亿</option>
+          <option value="5e10">≥ 500 亿</option>
+          <option value="1e11">≥ 1000 亿</option>
+        </select>
+        <label class="chk hide-sm"><input type="checkbox" id="exST" checked>剔除 ST</label>
+        <button class="btn" id="csvBtn" style="margin-left:auto">导出 CSV</button>
+      </div>
+      <div class="tablewrap">
+        <table id="tbl">
+          <thead>
+            <tr>
+              <th style="width:34px">#</th>
+              <th data-sort="name">名称 / 代码</th>
+              <th class="r" data-sort="price">现价</th>
+              <th class="r" data-sort="chg">涨跌</th>
+              <th class="r" data-sort="y">股息率</th>
+              <th class="r" data-sort="consec" title="近 6 年内连续分红的年数，6+ 表示窗口内每年都有">连分年数</th>
+              <th class="r" data-sort="payout">分红率</th>
+              <th class="r" data-sort="mcap">总市值</th>
+              <th class="r" data-sort="pe">PE</th>
+              <th>标记</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"><tr><td colspan="10"><div class="skel">数据加载中…</div></td></tr></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <div id="pageInfo">—</div>
+        <div class="pgbtns" id="pgbtns"></div>
+      </div>
+    </section>
+
+    <aside class="panel side">
+      <h3>行业股息率分布</h3>
+      <div class="sd">按行业平均股息率（TTM），样本 ≥ 5 只</div>
+      <div id="industry"><div class="skel" style="height:180px">—</div></div>
+      <div class="note">
+        <b>陷阱识别</b>：高股息不等于好标的。分红率 &gt; 90% 多为一次性派息或透支；周期行业（煤炭、航运、化工等）在盈利顶部股息率虚高，次年易腰斩。
+      </div>
+    </aside>
+  </div>
+
+  <footer>
+    数据来源：东方财富公开行情与分红送配接口，前端实时拉取，本地缓存 12 小时。<br>
+    「TTM」= 近 12 个月内已实施除权的现金分红合计 ÷ 现价；「上年年报」= 上一完整会计年度分红 ÷ 现价；「近 3 年平均」= 近 3 个年度派息合计 ÷ 现价 ÷ 年数。<br>
+    分红率为上年年报每 10 股派息 ÷ 10 ÷ 上年基本每股收益。本页面仅作数据工具，不构成投资建议。
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var QUOTE_API = "https://push2.eastmoney.com/api/qt/clist/get";
+  var BONUS_API = "https://datacenter-web.eastmoney.com/api/data/v1/get";
+  var PROXY = "/api/em?u=";
+  var PROXY_OK = null;
+  var FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23";
+  var FIELDS = "f2,f3,f5,f6,f8,f9,f12,f13,f14,f20,f21,f23,f26,f100";
+  var HISTORY_YEARS = 6;
+  var CACHE_KEY = "asdiv_cache_v3";
+  var CACHE_TTL = 12 * 3600 * 1000;
+
+  var TODAY = new Date(); TODAY.setHours(0,0,0,0);
+  var DAY = 86400000;
+
+  var CYCLE = {};
+  ["煤炭开采","航运港口","炼化及贸易","化学制品","化学原料","钢铁","工业金属","小金属","贵金属","证券","房地产开发","水泥","玻璃玻纤","农化制品","油服工程","燃气","渔业","种植业"].forEach(function(k){ CYCLE[k] = 1; });
+
+  var S = {
+    rows: [], byCode: {},
+    tab: "ttm",
+    sortKey: "y", sortDir: -1,
+    page: 1, size: 50,
+    q: "", ind: "", ymin: 0, capmin: 0, exST: true, preset: "all",
+    open: {},
+    loadedAt: null, fromCache: false
+  };
+
+  var $ = function(id){ return document.getElementById(id); };
+  var cbSeq = 0;
+  var refreshing = false;
+  var fails = 0;
+
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+  function buildQuery(params){
+    var parts = [];
+    for (var k in params){
+      if (!Object.prototype.hasOwnProperty.call(params, k)) continue;
+      var v = String(params[k]);
+      var safe = /^[A-Za-z0-9_,:+\-\.]+$/.test(v);
+      parts.push(k + "=" + (safe ? v : encodeURIComponent(v)));
+    }
+    return parts.join("&");
+  }
+
+  function request(base, params, cbKey){
+    var qs = buildQuery(params);
+    if (PROXY_OK === false) return jsonp(base, qs, cbKey);
+    return acquire().then(function(){
+      var target = PROXY + encodeURIComponent(base.replace(/^https:\/\//, "") + "?" + qs);
+      return fetch(target, { cache: "no-store", headers: { accept: "application/json" } })
+        .then(function(r){
+          if (!r.ok){
+            if (r.status === 404 || r.status === 405) PROXY_OK = false;
+            throw new Error("proxy_" + r.status);
+          }
+          return r.json().catch(function(e){ PROXY_OK = false; throw e; });
+        })
+        .then(function(j){
+          PROXY_OK = true;
+          release();
+          return j;
+        })
+        .catch(function(){
+          release();
+          return jsonp(base, qs, cbKey);
+        });
+    });
+  }
+
+  function jsonp(base, qs, cbKey){
+    return new Promise(function(resolve, reject){
+      acquire().then(function(){
+        var name = "__jp" + (++cbSeq);
+        var url = base + "?" + qs + "&" + cbKey + "=" + name;
+        var s = document.createElement("script");
+        var done = false;
+        var timer = setTimeout(function(){
+          if (done) return; done = true; cleanup(); reject(new Error("timeout"));
+        }, 12000);
+        function cleanup(){
+          clearTimeout(timer);
+          delete window[name];
+          if (s.parentNode) s.parentNode.removeChild(s);
+          release();
+        }
+        window[name] = function(data){
+          if (done) return; done = true; cleanup(); resolve(data);
+        };
+        s.onerror = function(){
+          if (done) return; done = true; cleanup(); reject(new Error("network"));
+        };
+        s.src = url;
+        s.charset = "utf-8";
+        s.async = true;
+        document.head.appendChild(s);
+      });
+    });
+  }
+
+  var activeReq = 0;
+  var waiters = [];
+  var MAX_REQ = 6;
+  function acquire(){
+    return new Promise(function(res){
+      if (activeReq < MAX_REQ){ activeReq++; res(); }
+      else waiters.push(res);
+    });
+  }
+  function release(){
+    activeReq = Math.max(0, activeReq - 1);
+    var next = waiters.shift();
+    if (next){ activeReq++; next(); }
+  }
+
+  function withRetry(fn, tries){
+    var n = tries == null ? 2 : tries;
+    return (function attempt(i){
+      return fn().catch(function(err){
+        if (i >= n) throw err;
+        return sleep(250 + i * 450).then(function(){ return attempt(i + 1); });
+      });
+    })(0);
+  }
+
+  function runPool(items, limit, worker){
+    var idx = 0;
+    var runners = [];
+    var n = Math.min(limit, items.length);
+    for (var i = 0; i < n; i++){
+      runners.push((function(){
+        function next(){
+          if (idx >= items.length) return Promise.resolve();
+          var cur = items[idx++];
+          return Promise.resolve(worker(cur)).then(next);
+        }
+        return next();
+      })());
+    }
+    return Promise.all(runners);
+  }
+
+  function normDiff(j){
+    if (!j || !j.data || !j.data.diff) return [];
+    var d = j.data.diff;
+    return Array.isArray(d) ? d : Object.keys(d).map(function(k){ return d[k]; });
+  }
+
+  function loadQuotes(onTick){
+    var pz = 100;
+    var base = {
+      po: 0, np: 1, fltt: 2, invt: 2, fid: "f12", fs: FS, fields: FIELDS
+    };
+    return withRetry(function(){
+      return request(QUOTE_API, Object.assign({}, base, { pn: 1, pz: pz, _: Date.now() }), "cb");
+    }).then(function(first){
+      var rows = normDiff(first);
+      var total = (first && first.data && first.data.total) || rows.length;
+      var pages = Math.max(1, Math.ceil(total / pz));
+      onTick && onTick(1, pages);
+      var rest = [];
+      for (var p = 2; p <= pages; p++) rest.push(p);
+      var done = 1;
+      var failed = [];
+      function pull(p){
+        return withRetry(function(){
+          return request(QUOTE_API, Object.assign({}, base, { pn: p, pz: pz, _: Date.now() }), "cb");
+        }, 2).then(function(j){
+          var add = normDiff(j);
+          for (var i = 0; i < add.length; i++) rows.push(add[i]);
+        });
+      }
+      return runPool(rest, 6, function(p){
+        return pull(p).catch(function(){ failed.push(p); }).then(function(){
+          done++; onTick && onTick(done, pages);
+        });
+      }).then(function(){
+        if (!failed.length) return null;
+        return runPool(failed, 2, function(p){
+          return pull(p).catch(function(){ fails++; });
+        });
+      }).then(function(){ return rows; });
+    });
+  }
+
+  function loadBonusPeriod(period){
+    var base = {
+      reportName: "RPT_SHAREBONUS_DET",
+      columns: "SECURITY_CODE,PRETAX_BONUS_RMB,EX_DIVIDEND_DATE,EQUITY_RECORD_DATE,REPORT_DATE,ASSIGN_PROGRESS,BASIC_EPS",
+      filter: "(REPORT_DATE='" + period + "')",
+      pageSize: 500,
+      source: "WEB",
+      client: "WEB"
+    };
+    function req(page, sorted){
+      var p = Object.assign({}, base, { pageNumber: page, _: Date.now() });
+      if (sorted){ p.sortColumns = "SECURITY_CODE"; p.sortTypes = 1; }
+      return request(BONUS_API, p, "callback");
+    }
+    function firstPage(){
+      return withRetry(function(){ return req(1, true); }).then(function(j){
+        if (j && j.result && j.result.data) return { j: j, sorted: true };
+        return withRetry(function(){ return req(1, false); }).then(function(j2){
+          return { j: j2, sorted: false };
+        });
+      });
+    }
+    return firstPage().then(function(o){
+      var res = o.j && o.j.result;
+      if (!res || !res.data) return [];
+      var out = res.data.slice();
+      var pages = res.pages || 1;
+      var rest = [];
+      for (var p = 2; p <= pages; p++) rest.push(p);
+      return runPool(rest, 3, function(p){
+        return withRetry(function(){ return req(p, o.sorted); }, 2).then(function(j){
+          if (j && j.result && j.result.data){
+            for (var i = 0; i < j.result.data.length; i++) out.push(j.result.data[i]);
+          }
+        }).catch(function(){ fails++; });
+      }).then(function(){ return out; });
+    });
+  }
+
+  function buildPeriods(){
+    var y = TODAY.getFullYear();
+    var qs = ["12-31", "09-30", "06-30", "03-31"];
+    var ttm = [];
+    var from = new Date(TODAY.getTime() - 548 * DAY);
+    for (var yy = y; yy >= y - 2; yy--){
+      for (var i = 0; i < qs.length; i++){
+        var p = yy + "-" + qs[i];
+        var d = new Date(p + "T00:00:00");
+        if (d <= TODAY && d >= from) ttm.push(p);
+      }
+    }
+    var hist = [];
+    for (var k = 1; k <= HISTORY_YEARS; k++) hist.push((y - k) + "-12-31");
+    var seen = {};
+    var all = [];
+    ttm.concat(hist).forEach(function(p){ if (!seen[p]) { seen[p] = 1; all.push(p); } });
+    return all;
+  }
+
+  function loadBonus(periods, onTick){
+    var out = [];
+    var done = 0;
+    var failedPeriods = [];
+    function merge(recs){
+      for (var i = 0; i < recs.length; i++) out.push(recs[i]);
+    }
+    return runPool(periods, 2, function(p){
+      return loadBonusPeriod(p).then(merge).catch(function(){ failedPeriods.push(p); }).then(function(){
+        done++; onTick && onTick(done, periods.length);
+      });
+    }).then(function(){
+      if (!failedPeriods.length) return null;
+      return runPool(failedPeriods, 1, function(p){
+        return loadBonusPeriod(p).then(merge).catch(function(){ fails++; });
+      });
+    }).then(function(){ return out; });
+  }
+
+  function pct(v, d){
+    if (v == null || !isFinite(v)) return "—";
+    return (v * 100).toFixed(d == null ? 2 : d) + "%";
+  }
+  function fmtCap(v){
+    if (!v || !isFinite(v)) return "—";
+    var y = v / 1e8;
+    if (y >= 10000) return (y / 10000).toFixed(2) + "万亿";
+    return Math.round(y) + "亿";
+  }
+  function fmtPrice(v){
+    if (!isFinite(v)) return "—";
+    return v >= 100 ? v.toFixed(1) : v.toFixed(2);
+  }
+  function parseDate(s){
+    if (!s) return null;
+    var d = new Date(String(s).slice(0, 10) + "T00:00:00");
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function buildRows(quotes, recs){
+    var byCode = {};
+    for (var i = 0; i < recs.length; i++){
+      var r = recs[i];
+      var code = r.SECURITY_CODE;
+      if (!code) continue;
+      var raw = Number(r.PRETAX_BONUS_RMB);
+      var dps = isFinite(raw) && raw > 0 ? raw / 10 : 0;
+      if (!dps) continue;
+      if (!byCode[code]) byCode[code] = [];
+      byCode[code].push({
+        period: String(r.REPORT_DATE || "").slice(0, 10),
+        dps: dps,
+        ex: String(r.EX_DIVIDEND_DATE || r.EQUITY_RECORD_DATE || "").slice(0, 10),
+        eps: Number(r.BASIC_EPS) || 0,
+        prog: r.ASSIGN_PROGRESS || ""
+      });
+    }
+
+    var y0 = TODAY.getFullYear();
+    var winFrom = new Date(TODAY.getTime() - 365 * DAY);
+    var rows = [];
+
+    for (var q = 0; q < quotes.length; q++){
+      var it = quotes[q];
+      var code2 = it.f12;
+      if (!code2) continue;
+      var price = Number(it.f2);
+      if (!isFinite(price) || price <= 0) continue;
+      var name = it.f14 || code2;
+      var ind = String(it.f100 || "").replace(/[ⅠⅡⅢ]+$/, "");
+
+      var listDate = null;
+      var ld = Number(it.f26);
+      if (isFinite(ld) && ld > 19000101){
+        listDate = new Date(Math.floor(ld / 10000) + "-" + String(Math.floor(ld / 100) % 100).padStart(2, "0") + "-01T00:00:00");
+      }
+
+      var rr = byCode[code2] || [];
+      var impl = [];
+      for (var z = 0; z < rr.length; z++){
+        var x = rr[z];
+        if (x.prog.indexOf("实施") >= 0) impl.push(x);
+      }
+
+      var ttm = 0, ttmCnt = 0, annualInWin = 0;
+      for (var a = 0; a < impl.length; a++){
+        var ex = parseDate(impl[a].ex);
+        if (ex && ex >= winFrom && ex <= TODAY){
+          ttm += impl[a].dps; ttmCnt++;
+          if (impl[a].period.slice(5) === "12-31") annualInWin++;
+        }
+      }
+      ttm = price > 0 ? ttm / price : 0;
+
+      var annuals = [];
+      for (var b = 0; b < impl.length; b++){
+        if (impl[b].period.slice(5) === "12-31") annuals.push(impl[b]);
+      }
+      annuals.sort(function(m, n){ return n.period.localeCompare(m.period); });
+
+      var lastA = annuals.length ? annuals[0] : null;
+      var last = lastA ? lastA.dps / price : 0;
+      var payout = (lastA && lastA.eps > 0) ? lastA.dps / lastA.eps : null;
+
+      var yearSet = {};
+      for (var c = 0; c < annuals.length; c++) yearSet[+annuals[c].period.slice(0, 4)] = 1;
+
+      var consec = 0;
+      for (var yy = y0 - 1; yearSet[yy]; yy--) consec++;
+      var years = 0;
+      for (var k = 1; k <= HISTORY_YEARS; k++) if (yearSet[y0 - k]) years++;
+
+      var sum3 = 0, n3 = 0;
+      for (var t = 1; t <= 3; t++){
+        var found = null;
+        for (var u = 0; u < annuals.length; u++){
+          if (+annuals[u].period.slice(0, 4) === y0 - t){ found = annuals[u]; break; }
+        }
+        if (found){ sum3 += found.dps; n3++; }
+      }
+      var avg3 = n3 ? (sum3 / n3) / price : 0;
+
+      var flags = [];
+      if (ttm <= 0) flags.push(["none", "无分红"]);
+      if (ttm > 0 && consec <= 1) flags.push(["warn", "分红不连续"]);
+      if (payout != null && payout > 0.9) flags.push(["warn", "分红率>90%"]);
+      if (ttm > 0.08 && CYCLE[ind]) flags.push(["warn", "周期高位"]);
+      if (ttm > 0.10) flags.push(["bad", "需核验"]);
+      if (annualInWin >= 2) flags.push(["info", "含2次年报"]);
+      if (ttm >= 0.03 && consec >= 5 && payout != null && payout >= 0.2 && payout <= 0.75) flags.push(["good", "稳健"]);
+
+      rows.push({
+        code: code2, name: name, price: price,
+        chg: Number(it.f3), pe: Number(it.f9), pb: Number(it.f23),
+        mcap: Number(it.f20), ind: ind, listDate: listDate,
+        ttm: ttm, ttmCnt: ttmCnt, last: last, avg3: avg3,
+        payout: payout, consec: consec, years: years,
+        flags: flags, records: impl.slice().sort(function(m, n){ return n.period.localeCompare(m.period); })
+      });
+    }
+    return rows;
+  }
+
+  function currentYield(r){
+    if (S.tab === "last") return r.last;
+    if (S.tab === "avg3") return r.avg3;
+    return r.ttm;
+  }
+
+  function isST(name){
+    return /ST|退|PT/i.test(name);
+  }
+  function isNew(r){
+    return r.listDate ? (TODAY - r.listDate) < 3 * 365 * DAY : false;
+  }
+
+  function filtered(){
+    var q = S.q.trim().toLowerCase();
+    var out = [];
+    for (var i = 0; i < S.rows.length; i++){
+      var r = S.rows[i];
+      if (S.exST && isST(r.name)) continue;
+      if (isNew(r)) continue;
+      if (S.ind && r.ind !== S.ind) continue;
+      if (S.capmin && !(r.mcap >= S.capmin)) continue;
+      var yv = currentYield(r);
+      if (S.ymin && !(yv >= S.ymin)) continue;
+      if (S.preset === "steady"){ if (!(yv >= 0.04 && r.consec >= 4 && (r.payout == null || r.payout <= 0.8))) continue; }
+      if (S.preset === "cycle"){ if (!(CYCLE[r.ind] && yv >= 0.035)) continue; }
+      if (S.preset === "check"){ if (!r.flags.some(function(f){ return f[0] === "bad" || f[1] === "周期高位"; })) continue; }
+      if (q){
+        if (r.name.toLowerCase().indexOf(q) < 0 && r.code.indexOf(q) < 0) continue;
+      }
+      out.push(r);
+    }
+    var key = S.sortKey, dir = S.sortDir;
+    out.sort(function(a, b){
+      var va, vb;
+      if (key === "y"){ va = currentYield(a); vb = currentYield(b); }
+      else if (key === "name"){ return dir * a.name.localeCompare(b.name, "zh"); }
+      else { va = a[key]; vb = b[key]; }
+      if (va == null || !isFinite(va)) va = -Infinity;
+      if (vb == null || !isFinite(vb)) vb = -Infinity;
+      if (va === vb) return a.code.localeCompare(b.code);
+      return (va - vb) * dir;
+    });
+    return out;
+  }
+
+  function tagHtml(flags){
+    if (!flags.length) return '<span class="tag none">普通</span>';
+    var out = "";
+    var limit = Math.min(flags.length, 2);
+    for (var i = 0; i < limit; i++){
+      out += '<span class="tag ' + flags[i][0] + '">' + flags[i][1] + "</span>";
+    }
+    return out;
+  }
+
+  function renderMetrics(list){
+    var yv = [];
+    for (var i = 0; i < list.length; i++){
+      var v = currentYield(list[i]);
+      if (v > 0) yv.push(v);
+    }
+    yv.sort(function(a, b){ return a - b; });
+    var median = yv.length ? yv[Math.floor(yv.length / 2)] : 0;
+    var cnt5 = 0, cnt5y = 0, cntCheck = 0;
+    for (var j = 0; j < list.length; j++){
+      var r = list[j];
+      if (currentYield(r) >= 0.05) cnt5++;
+      if (r.consec >= 5) cnt5y++;
+      if (r.flags.some(function(f){ return f[0] === "bad"; })) cntCheck++;
+    }
+    $("metrics").innerHTML =
+      '<div class="metric"><div class="k">有效样本</div><div class="v num">' + yv.length.toLocaleString() + '<small>只</small></div></div>' +
+      '<div class="metric"><div class="k">全 A 中位数</div><div class="v num">' + pct(median) + '</div></div>' +
+      '<div class="metric"><div class="k">股息率 ≥ 5%</div><div class="v num">' + cnt5 + '<small>只</small></div></div>' +
+      '<div class="metric"><div class="k">连续分红 ≥ 5 年</div><div class="v num">' + cnt5y + '<small>只</small></div></div>' +
+      '<div class="metric"><div class="k">待核验</div><div class="v num">' + cntCheck + '<small>只</small></div></div>';
+  }
+
+  function renderIndustry(list){
+    var m = {};
+    for (var i = 0; i < list.length; i++){
+      var r = list[i];
+      var v = currentYield(r);
+      if (!r.ind || v <= 0) continue;
+      if (!m[r.ind]) m[r.ind] = { s: 0, n: 0 };
+      m[r.ind].s += v; m[r.ind].n++;
+    }
+    var arr = [];
+    for (var k in m){
+      if (m[k].n >= 5) arr.push({ ind: k, avg: m[k].s / m[k].n, n: m[k].n });
+    }
+    arr.sort(function(a, b){ return b.avg - a.avg; });
+    arr = arr.slice(0, 10);
+    if (!arr.length){ $("industry").innerHTML = '<div class="skel" style="height:120px">暂无样本</div>'; return; }
+    var max = arr[0].avg;
+    var html = "";
+    for (var j = 0; j < arr.length; j++){
+      var w = Math.max(4, (arr[j].avg / max) * 100);
+      html += '<div class="bar-row" title="' + arr[j].n + ' 只样本">' +
+        '<span class="bar-label">' + arr[j].ind + '</span>' +
+        '<span class="bar-track"><i style="width:' + w.toFixed(1) + '%"></i></span>' +
+        '<span class="bar-val num">' + pct(arr[j].avg, 2) + "</span></div>";
+    }
+    $("industry").innerHTML = html;
+  }
+
+  function detailHtml(r){
+    var recs = r.records.slice(0, 8);
+    var rowsHtml = "";
+    for (var i = 0; i < recs.length; i++){
+      var x = recs[i];
+      rowsHtml += "<tr><td>" + x.period + "</td><td class='r num'>" + (x.dps * 10).toFixed(2) + "</td><td>" + (x.ex || "—") + "</td><td>" + x.prog + "</td></tr>";
+    }
+    if (!rowsHtml) rowsHtml = "<tr><td colspan='4' style='color:var(--ink3)'>无可用的已实施分红记录</td></tr>";
+    return '<tr class="detail"><td colspan="10"><div class="dbox">' +
+      "<div><h4>分红明细（每 10 股派息，税前）</h4><table class='dtable'><thead><tr><th>报告期</th><th class='r'>派息</th><th>除权除息日</th><th>进度</th></tr></thead><tbody>" + rowsHtml + "</tbody></table></div>" +
+      "<div><h4>关键指标</h4><div class='kv'>" +
+      "<span>股息率 TTM</span><span class='num'>" + pct(r.ttm) + "</span>" +
+      "<span>上年年报</span><span class='num'>" + pct(r.last) + "</span>" +
+      "<span>近 3 年均值</span><span class='num'>" + pct(r.avg3) + "</span>" +
+      "<span>连续分红</span><span class='num'>" + (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") + "（近 " + HISTORY_YEARS + " 年 " + r.years + " 次）</span>" +
+      "<span>分红率</span><span class='num'>" + (r.payout == null ? "—" : pct(r.payout, 0)) + "</span>" +
+      "<span>总市值</span><span class='num'>" + fmtCap(r.mcap) + "</span>" +
+      "<span>PE / PB</span><span class='num'>" + (isFinite(r.pe) && r.pe !== 0 ? r.pe.toFixed(1) : "—") + " / " + (isFinite(r.pb) && r.pb !== 0 ? r.pb.toFixed(2) : "—") + "</span>" +
+      "<span>所属行业</span><span>" + (r.ind || "—") + "</span>" +
+      "<span>上市日期</span><span>" + (r.listDate ? (r.listDate.getFullYear() + "-" + String(r.listDate.getMonth() + 1).padStart(2, "0")) : "—") + "</span>" +
+      "</div></div></div></td></tr>";
+  }
+
+  function syncSort(){
+    var ths = document.querySelectorAll("thead th[data-sort]");
+    for (var i = 0; i < ths.length; i++){
+      ths[i].classList.remove("sorted-asc", "sorted-desc");
+      if (ths[i].getAttribute("data-sort") === S.sortKey){
+        ths[i].classList.add(S.sortDir === 1 ? "sorted-asc" : "sorted-desc");
+      }
+    }
+  }
+
+  function renderTable(){
+    syncSort();
+    var list = filtered();
+    var total = list.length;
+    var pages = Math.max(1, Math.ceil(total / S.size));
+    if (S.page > pages) S.page = pages;
+    var start = (S.page - 1) * S.size;
+    var slice = list.slice(start, start + S.size);
+
+    if (!total){
+      $("tbody").innerHTML = '<tr><td colspan="10"><div class="skel">没有符合条件的标的，试着放宽筛选</div></td></tr>';
+    } else {
+      var html = "";
+      for (var i = 0; i < slice.length; i++){
+        var r = slice[i];
+        var yv = currentYield(r);
+        var chg = r.chg;
+        var cls = !isFinite(chg) ? "flat" : (chg > 0 ? "up" : (chg < 0 ? "down" : "flat"));
+        var chgTxt = !isFinite(chg) ? "—" : (chg > 0 ? "+" : "") + chg.toFixed(2) + "%";
+        html += '<tr class="row" data-code="' + r.code + '">' +
+          '<td class="rank' + (i < 3 && S.sortKey === "y" && S.sortDir === -1 ? " top" : "") + '">' + (start + i + 1) + "</td>" +
+          '<td><span class="nm">' + r.name + '</span><span class="code num">' + r.code + '</span><span class="ind hide-sm">' + (r.ind || "") + "</span></td>" +
+          '<td class="r num">' + fmtPrice(r.price) + "</td>" +
+          '<td class="r num ' + cls + '">' + chgTxt + "</td>" +
+          '<td class="r"><span class="yield num">' + pct(yv) + "</span></td>" +
+          '<td class="r num">' + (r.consec ? (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") : "—") + "</td>" +
+          '<td class="r num">' + (r.payout == null ? "—" : pct(r.payout, 0)) + "</td>" +
+          '<td class="r num">' + fmtCap(r.mcap) + "</td>" +
+          '<td class="r num">' + (isFinite(r.pe) && r.pe !== 0 ? r.pe.toFixed(1) : "—") + "</td>" +
+          "<td>" + tagHtml(r.flags) + "</td></tr>";
+        if (S.open[r.code]) html += detailHtml(r);
+      }
+      $("tbody").innerHTML = html;
+    }
+
+    $("pageInfo").textContent = total
+      ? "共 " + total.toLocaleString() + " 条 · 第 " + S.page + " / " + pages + " 页"
+      : "共 0 条";
+
+    var btns = "";
+    btns += '<button class="pgbtn" data-pg="' + (S.page - 1) + '"' + (S.page <= 1 ? " disabled" : "") + ">‹</button>";
+    var from = Math.max(1, S.page - 2), to = Math.min(pages, from + 4);
+    from = Math.max(1, to - 4);
+    for (var p = from; p <= to; p++){
+      btns += '<button class="pgbtn' + (p === S.page ? " on" : "") + '" data-pg="' + p + '">' + p + "</button>";
+    }
+    btns += '<button class="pgbtn" data-pg="' + (S.page + 1) + '"' + (S.page >= pages ? " disabled" : "") + ">›</button>";
+    $("pgbtns").innerHTML = btns;
+  }
+
+  function renderAll(){
+    renderMetrics(S.rows);
+    renderTable();
+    renderIndustry(S.rows);
+    var inds = {};
+    for (var i = 0; i < S.rows.length; i++) if (S.rows[i].ind) inds[S.rows[i].ind] = 1;
+    var sel = $("ind");
+    var cur = sel.value;
+    var opts = '<option value="">全部行业</option>';
+    Object.keys(inds).sort().forEach(function(k){ opts += '<option value="' + k + '">' + k + "</option>"; });
+    sel.innerHTML = opts;
+    sel.value = cur;
+    $("hintFilter").textContent = (S.exST ? "ST / " : "") + "次新";
+  }
+
+  function setStatus(state, text){
+    $("dot").className = "dot " + state;
+    $("statusText").textContent = text;
+  }
+
+  function progress(on){
+    var bar = $("prog").firstElementChild;
+    if (on){
+      $("prog").className = "prog on";
+      bar.style.width = "100%";
+    } else {
+      $("prog").className = "prog";
+      bar.style.width = "0%";
+    }
+  }
+
+  function saveCache(){
+    try{
+      var pack = { ts: Date.now(), rows: S.rows.map(function(r){
+        return [r.code, r.name, r.price, r.chg, r.pe, r.pb, r.mcap, r.ind, r.listDate ? r.listDate.getTime() : 0,
+          Math.round(r.ttm * 1e6), Math.round(r.last * 1e6), Math.round(r.avg3 * 1e6),
+          r.payout == null ? -1 : Math.round(r.payout * 1e4), r.consec, r.years, r.ttmCnt,
+          r.flags.map(function(f){ return f[0] + ":" + f[1]; }).join("|"),
+          r.records.slice(0, 10).map(function(x){ return x.period + "," + x.dps + "," + x.ex + "," + x.prog; }).join(";")
+        ];
+      }) };
+      localStorage.setItem(CACHE_KEY, JSON.stringify(pack));
+    }catch(e){ /* quota */ }
+  }
+
+  function readCache(){
+    try{
+      var raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      var pack = JSON.parse(raw);
+      if (!pack || !pack.ts || !pack.rows) return null;
+      if (Date.now() - pack.ts > CACHE_TTL) return null;
+      var rows = pack.rows.map(function(a){
+        return {
+          code: a[0], name: a[1], price: a[2], chg: a[3], pe: a[4], pb: a[5], mcap: a[6], ind: a[7],
+          listDate: a[8] ? new Date(a[8]) : null,
+          ttm: a[9] / 1e6, last: a[10] / 1e6, avg3: a[11] / 1e6,
+          payout: a[12] < 0 ? null : a[12] / 1e4,
+          consec: a[13], years: a[14], ttmCnt: a[15],
+          flags: String(a[16] || "").split("|").filter(Boolean).map(function(s){ var i = s.indexOf(":"); return [s.slice(0, i), s.slice(i + 1)]; }),
+          records: String(a[17] || "").split(";").filter(Boolean).map(function(s){
+            var p = s.split(",");
+            return { period: p[0], dps: Number(p[1]), ex: p[2], prog: p[3], eps: 0 };
+          })
+        };
+      });
+      return { ts: pack.ts, rows: rows };
+    }catch(e){ return null; }
+  }
+
+  function stamp(ts){
+    var d = new Date(ts);
+    function z(n){ return n < 10 ? "0" + n : "" + n; }
+    return z(d.getHours()) + ":" + z(d.getMinutes()) + ":" + z(d.getSeconds());
+  }
+
+  function loadFull(){
+    var periods = buildPeriods();
+    var quotePages = 0, bonusDone = 0;
+    fails = 0;
+    setStatus("load", "加载中");
+    progress(true);
+    $("subline").textContent = "正在拉取全市场行情与近 " + HISTORY_YEARS + " 年分红记录…";
+
+    var pQ = loadQuotes(function(d, t){
+      quotePages = t;
+      $("subline").textContent = "行情 " + d + "/" + t + " 页 · 分红 " + bonusDone + "/" + periods.length + " 期";
+    });
+    var pB = loadBonus(periods, function(d, t){
+      bonusDone = d;
+      $("subline").textContent = "行情 " + (quotePages || "—") + " 页 · 分红 " + d + "/" + t + " 期";
+    });
+
+    return Promise.all([pQ, pB]).then(function(res){
+      var rows = buildRows(res[0], res[1]);
+      if (!rows.length) throw new Error("数据为空");
+      S.rows = rows;
+      S.loadedAt = Date.now();
+      S.fromCache = false;
+      saveCache();
+      progress(false);
+      setStatus("ok", "已更新 " + stamp(S.loadedAt));
+      $("subline").textContent = "全市场 " + rows.length.toLocaleString() + " 只 · 数据源 东方财富 · 每 5 分钟自动刷新" + (fails ? " · " + fails + " 个分页加载失败" : "");
+      $("hintTime").textContent = "更新于 " + stamp(S.loadedAt);
+      renderAll();
+    });
+  }
+
+  function refreshQuotes(){
+    if (refreshing) return;
+    refreshing = true;
+    var btn = $("refreshBtn");
+    btn.disabled = true;
+    setStatus("load", "刷新行情");
+    progress(true);
+    loadQuotes(function(d, t){
+      $("subline").textContent = "刷新行情 " + d + "/" + t + " 页…";
+    }).then(function(quotes){
+      var map = {};
+      for (var i = 0; i < quotes.length; i++) map[quotes[i].f12] = quotes[i];
+      var n = 0;
+      for (var j = 0; j < S.rows.length; j++){
+        var r = S.rows[j];
+        var q = map[r.code];
+        if (q){
+          r.price = Number(q.f2) || r.price;
+          r.chg = Number(q.f3);
+          r.pe = Number(q.f9);
+          r.pb = Number(q.f23);
+          r.mcap = Number(q.f20);
+          n++;
+        }
+      }
+      recomputeYields();
+      S.loadedAt = Date.now();
+      saveCache();
+      progress(false);
+      setStatus("ok", "已更新 " + stamp(S.loadedAt));
+      $("hintTime").textContent = "更新于 " + stamp(S.loadedAt);
+      renderAll();
+    }).catch(function(err){
+      progress(false);
+      setStatus("err", "刷新失败");
+      console.warn(err);
+    }).then(function(){ btn.disabled = false; refreshing = false; });
+  }
+
+  function recomputeYields(){
+    for (var i = 0; i < S.rows.length; i++){
+      var r = S.rows[i];
+      if (!r.price || r.price <= 0) continue;
+      var ttmDps = 0, annualDps = 0, n3 = 0, sum3 = 0;
+      for (var j = 0; j < r.records.length; j++){
+        var x = r.records[j];
+        if (x.prog.indexOf("实施") < 0) continue;
+        var d = parseDate(x.ex);
+        if (d && d >= new Date(TODAY.getTime() - 365 * DAY) && d <= TODAY) ttmDps += x.dps;
+        if (x.period.slice(5) === "12-31"){
+          var yy = +x.period.slice(0, 4);
+          if (yy <= TODAY.getFullYear() - 1 && yy > TODAY.getFullYear() - 4){
+            sum3 += x.dps; n3++;
+            if (!annualDps || x.period === (TODAY.getFullYear() - 1) + "-12-31") annualDps = x.dps;
+          }
+        }
+      }
+      if (ttmDps > 0) r.ttm = ttmDps / r.price;
+      if (annualDps > 0) r.last = annualDps / r.price;
+      if (n3) r.avg3 = (sum3 / n3) / r.price;
+    }
+  }
+
+  function exportCsv(){
+    var list = filtered();
+    var head = ["排名","代码","名称","现价","涨跌幅","股息率TTM","上年年报","近3年均值","连续分红年数","近"+HISTORY_YEARS+"年分红次数","分红率","总市值(亿元)","PE","PB","行业","标记"];
+    var lines = [head.join(",")];
+    for (var i = 0; i < list.length; i++){
+      var r = list[i];
+      lines.push([
+        i + 1, r.code, '"' + r.name.replace(/"/g, '""') + '"',
+        r.price.toFixed(2),
+        isFinite(r.chg) ? r.chg.toFixed(2) : "",
+        (r.ttm * 100).toFixed(2),
+        (r.last * 100).toFixed(2),
+        (r.avg3 * 100).toFixed(2),
+        r.consec, r.years,
+        r.payout == null ? "" : (r.payout * 100).toFixed(1),
+        Math.round(r.mcap / 1e8),
+        isFinite(r.pe) ? r.pe.toFixed(2) : "",
+        isFinite(r.pb) ? r.pb.toFixed(2) : "",
+        '"' + r.ind + '"',
+        '"' + r.flags.map(function(f){ return f[1]; }).join(" ") + '"'
+      ].join(","));
+    }
+    var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "A股股息率排行_" + (TODAY.getFullYear() + String(TODAY.getMonth() + 1).padStart(2, "0") + String(TODAY.getDate()).padStart(2, "0")) + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  function bind(){
+    document.querySelectorAll(".tab").forEach(function(t){
+      t.addEventListener("click", function(){
+        document.querySelectorAll(".tab").forEach(function(o){ o.classList.remove("on"); });
+        t.classList.add("on");
+        S.tab = t.getAttribute("data-tab");
+        S.sortKey = "y"; S.sortDir = -1; S.page = 1;
+        renderAll();
+      });
+    });
+
+    document.querySelector("thead").addEventListener("click", function(e){
+      var th = e.target.closest("th[data-sort]");
+      if (!th) return;
+      var key = th.getAttribute("data-sort");
+      if (S.sortKey === key) S.sortDir = -S.sortDir;
+      else { S.sortKey = key; S.sortDir = (key === "name") ? 1 : -1; }
+      S.page = 1;
+      renderTable();
+    });
+
+    $("tbody").addEventListener("click", function(e){
+      var tr = e.target.closest("tr.row");
+      if (!tr) return;
+      var code = tr.getAttribute("data-code");
+      if (S.open[code]) delete S.open[code]; else S.open[code] = 1;
+      renderTable();
+    });
+
+    $("pgbtns").addEventListener("click", function(e){
+      var b = e.target.closest("button[data-pg]");
+      if (!b || b.disabled) return;
+      S.page = parseInt(b.getAttribute("data-pg"), 10);
+      renderTable();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    $("q").addEventListener("input", function(e){ S.q = e.target.value; S.page = 1; renderTable(); });
+    $("ind").addEventListener("change", function(e){ S.ind = e.target.value; S.page = 1; renderTable(); });
+    $("ymin").addEventListener("change", function(e){ S.ymin = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
+    $("capmin").addEventListener("change", function(e){ S.capmin = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
+    $("exST").addEventListener("change", function(e){ S.exST = e.target.checked; S.page = 1; renderTable(); });
+
+    $("presets").addEventListener("click", function(e){
+      var b = e.target.closest("button[data-preset]");
+      if (!b) return;
+      document.querySelectorAll("#presets button").forEach(function(o){ o.classList.remove("on"); });
+      b.classList.add("on");
+      S.preset = b.getAttribute("data-preset");
+      S.page = 1;
+      renderTable();
+    });
+
+    $("refreshBtn").addEventListener("click", function(){
+      if (S.rows.length) refreshQuotes(); else boot();
+    });
+
+    $("csvBtn").addEventListener("click", exportCsv);
+  }
+
+  function boot(){
+    var cached = readCache();
+    if (cached){
+      S.rows = cached.rows;
+      S.loadedAt = cached.ts;
+      S.fromCache = true;
+      S.byCode = {};
+      setStatus("ok", "缓存 " + stamp(cached.ts));
+      $("subline").textContent = "已载入本地缓存，正在后台更新…";
+      $("hintTime").textContent = "缓存于 " + stamp(cached.ts);
+      renderAll();
+      loadFull().catch(function(err){
+        progress(false);
+        setStatus("ok", "离线 · 缓存 " + stamp(cached.ts));
+        console.warn(err);
+      });
+      return;
+    }
+    loadFull().catch(function(err){
+      progress(false);
+      setStatus("err", "加载失败");
+      $("subline").textContent = "数据加载失败";
+      $("tbody").innerHTML = '<tr><td colspan="10"><div class="error">无法连接东方财富数据接口（' +
+        (err && err.message ? err.message : "未知错误") +
+        "）。<br>请检查网络后点击右上角「刷新」重试。若浏览器拦截了跨域脚本，可尝试关闭广告拦截插件。</div></td></tr>";
+    });
+  }
+
+  bind();
+  boot();
+
+  window.__dash = { refresh: refreshQuotes, state: S };
+
+  setInterval(function(){
+    if (document.hidden) return;
+    if (!S.rows.length) return;
+    refreshQuotes();
+  }, 5 * 60 * 1000);
+})();
+</script>
+</body>
+</html>
