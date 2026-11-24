@@ -122,14 +122,21 @@ function readJson(f) {
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
-  const meta = readJson("fundmeta.json");
-  if (!meta || !meta.rows || !meta.rows.length) throw new Error("没有 fundmeta.json，先跑 fundmeta");
-
-  // 从基金元信息里收集全部经理 id → 该经理现任的基金集合
+  // 经理 id 来源：优先用 mgrmap.json（姓名→id，来自 /fundSearch?m=7）。
+  // 那条链路几分钟就能建完；fundmeta 里也带 id，但它要爬 F10 概况页，速度慢，
+  // 只作为兜底保留。
   const ids = new Set();
-  for (const r of meta.rows) {
-    for (const m of r.mgr || []) if (m.id) ids.add(m.id);
+  const mm = readJson("mgrmap.json");
+  for (const r of (mm && mm.rows) || []) if (r && r.id) ids.add(r.id);
+
+  if (!ids.size) {
+    const meta = readJson("fundmeta.json");
+    for (const r of (meta && meta.rows) || []) {
+      for (const m of r.mgr || []) if (m.id) ids.add(m.id);
+    }
+    if (ids.size) console.log("[MGR] mgrmap 不可用，退回 fundmeta 的经理 id（" + ids.size + " 个）");
   }
+  if (!ids.size) throw new Error("没有 mgrmap.json 也没有 fundmeta.json，无法确定经理 id");
 
   const cache = readJson("managers.json");
   const done = new Map();
