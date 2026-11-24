@@ -364,14 +364,14 @@ async function buildA() {
     const avg3 = n3 ? sum3 / n3 / price : 0;
 
     const flags = [];
-    if (ttm <= 0) flags.push("n:无分红");
-    if (ttm > 0 && consec <= 1) flags.push("w:分红不连续");
-    if (payout != null && payout > 0.9) flags.push("w:分红率>90%");
-    if (ttm > 0.08 && CYCLE.has(ind)) flags.push("w:周期高位");
-    if (ttm > 0.1) flags.push("b:需核验");
-    if (annualInWin >= 2) flags.push("i:含2次年报");
+    if (ttm <= 0) flags.push("none:无分红");
+    if (ttm > 0 && consec <= 1) flags.push("warn:分红不连续");
+    if (payout != null && payout > 0.9) flags.push("warn:分红率>90%");
+    if (ttm > 0.08 && CYCLE.has(ind)) flags.push("warn:周期高位");
+    if (ttm > 0.1) flags.push("bad:需核验");
+    if (annualInWin >= 2) flags.push("info:含2次年报");
     if (ttm >= 0.03 && consec >= 5 && payout != null && payout >= 0.2 && payout <= 0.75)
-      flags.push("g:稳健");
+      flags.push("good:稳健");
 
     // 从未分红的标的在股息率榜单里就是一堆 0 值噪音，不进快照（省 15% 体积）
     if (ttm <= 0 && last <= 0 && consec <= 0) continue;
@@ -541,12 +541,12 @@ async function buildHK() {
     const avg3 = n3 ? sum3 / n3 / price : 0;
 
     const flags = [];
-    if (ttm <= 0) flags.push("n:无分红");
-    if (nonHkd > 0) flags.push("i:含非港币(已折算)");
-    if (ttm > 0 && consec <= 1) flags.push("w:分红不连续");
-    if (ttm > 0.1) flags.push("b:需核验");
-    if (price < 1) flags.push("w:低价股");
-    if (ttm >= 0.04 && consec >= 5) flags.push("g:稳健");
+    if (ttm <= 0) flags.push("none:无分红");
+    if (nonHkd > 0) flags.push("info:含非港币(已折算)");
+    if (ttm > 0 && consec <= 1) flags.push("warn:分红不连续");
+    if (ttm > 0.1) flags.push("bad:需核验");
+    if (price < 1) flags.push("warn:低价股");
+    if (ttm >= 0.04 && consec >= 5) flags.push("good:稳健");
 
     rows.push([
       c, it.f14 || c, price,
