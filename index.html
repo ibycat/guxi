@@ -900,10 +900,18 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   function now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
 
+  // 标记的严重度必须落在 good/warn/bad/info/none 这五个 CSS 类上，否则标签没有底色。
+  // 早期快照里用过单字母缩写（g/w/b/i/n），这里做一次归一，保证旧数据也能正常上色。
+  var FLAG_CODE = {
+    g: "good", w: "warn", b: "bad", i: "info", n: "none",
+    good: "good", warn: "warn", bad: "bad", info: "info", none: "none"
+  };
+
   function parseFlags(str){
     return String(str || "").split("|").filter(Boolean).map(function(x){
       var i = x.indexOf(":");
-      return [x.slice(0, i), x.slice(i + 1)];
+      if (i < 0) return ["none", x];
+      return [FLAG_CODE[x.slice(0, i)] || "info", x.slice(i + 1)];
     });
   }
 
