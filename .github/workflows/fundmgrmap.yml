@@ -2,6 +2,7 @@ name: fundmgrmap
 
 # 经理「姓名 → id」映射（用 /fundSearch?m=7 反查）。
 # 建好之后 fundmgr 就不再依赖 fundmeta，fundmeta 可以下线。
+# 注意：同一个 concurrency group 只保留一个排队中的任务，新触发的会把旧的排队任务顶掉。
 
 on:
   schedule:
