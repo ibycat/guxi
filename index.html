@@ -957,7 +957,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     var bust = Math.floor(Date.now() / 600000) + (FORCE_REFRESH ? "r" + Date.now() : "");
     // 同源代理优先（走 Cloudflare 边缘、国内快），失败再直连 GitHub raw
     var nc = FORCE_REFRESH ? "&nocache=1" : "";
-    return getJson("/api/snap?f=" + name + "&v=3" + nc + "&t=" + bust)
+    return getJson("/api/snap?f=" + name + "&v=4" + nc + "&t=" + bust)
       .catch(function(err){
         console.warn("快照同源代理不可用，直连 raw", err);
         return getJson(SNAP_RAW + name + ".json?t=" + bust);
