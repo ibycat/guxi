@@ -5,6 +5,10 @@ name: fundmgr
 # 先用 MGR_LIMIT=20 验证解析，确认无误再调大。
 
 on:
+  schedule:
+    # 每天一批（UTC 03:00 = 北京 11:00）。经理数量约 2500，每批 600 位，
+    # 4~5 批铺满；之后每次只补新增的经理。
+    - cron: "0 3 * * *"
   workflow_dispatch:
   push:
     paths:
@@ -14,12 +18,18 @@ on:
 permissions:
   contents: write
 
+# 多个 run 同时 force push 同一个 data 分支会互相覆盖，
+# 用同一 group 串行化；不取消进行中的任务，避免半途中断
+concurrency:
+  group: data-branch-writer
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      MGR_LIMIT: "20"
+      MGR_LIMIT: "600"
     steps:
       - uses: actions/checkout@v4
         with:
