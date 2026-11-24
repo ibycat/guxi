@@ -1,0 +1,11 @@
+.workbuddy
+.wrangler
+node_modules
+.git
+README.md
+package.json
+package-lock.json
+wrangler.toml
+.assetsignore
+.gitignore
+push.bat
