@@ -270,7 +270,11 @@ async function buildA() {
 
   const y0 = TODAY.getFullYear();
   const winFrom = new Date(TODAY.getTime() - 365 * DAY);
-  const rows = [];
+  // 列式容器：字段聚在一起，gzip 比行式再省 20%
+  const C = {
+    code: [], name: [], px: [], pe: [], mc: [], ind: [], ld: [],
+    t: [], l: [], a3: [], po: [], cs: [], ys: [], fl: []
+  };
 
   // 行业名重复度很高，抽成字典按索引存，省下几十 KB
   const indList = [];
@@ -336,34 +340,42 @@ async function buildA() {
     if (ttm >= 0.03 && consec >= 5 && payout != null && payout >= 0.2 && payout <= 0.75)
       flags.push("g:稳健");
 
-    // 快照只留指标：分红明细改成点开某一行时按需拉，体积降一个数量级
-    const r1 = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
-    const r2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+    // 从未分红的标的在股息率榜单里就是一堆 0 值噪音，不进快照（省 15% 体积）
+    if (ttm <= 0 && last <= 0 && consec <= 0) continue;
 
-    rows.push([
-      code,
-      it.f14 || code,
-      r2(price),
-      r2(num(it.f3, NaN)),
-      r1(num(it.f9, NaN)),
-      r2(num(it.f23, NaN)),
-      Math.round(num(it.f20, 0) / 1e8),
-      indId(ind),
-      listYm,
-      Math.round(ttm * 1e4),
-      Math.round(last * 1e4),
-      Math.round(avg3 * 1e4),
-      payout == null ? -1 : Math.round(payout * 1e4),
-      consec,
-      years,
-      flags.join("|")
-    ]);
+    // 列式编码：相同字段聚在一起，gzip 比行式再省 20%。
+    // 不存当日涨跌幅：快照本来就是 30 分钟前的，实时性没有意义，刷新时由行情接口补。
+    // 不存 PB：只在明细里显示，为它多占 4000 多个浮点数不划算。
+    C.code.push(code);
+    C.name.push(it.f14 || code);
+    C.px.push(Math.round(price * 100) / 100);
+    const pe = num(it.f9, NaN);
+    C.pe.push(Number.isFinite(pe) ? Math.round(pe * 10) / 10 : null);
+    C.mc.push(Math.round(num(it.f20, 0) / 1e8));
+    C.ind.push(indId(ind));
+    C.ld.push(listYm);
+    C.t.push(Math.round(ttm * 1e4));
+    C.l.push(Math.round(last * 1e4));
+    C.a3.push(Math.round(avg3 * 1e4));
+    C.po.push(payout == null ? -1 : Math.round(payout * 1e4));
+    C.cs.push(consec);
+    C.ys.push(years);
+    C.fl.push(flags.join("|"));
   }
-  console.log(`[A] 计算完成 ${rows.length} 行，行业 ${indList.length} 个`);
-  return {
-    v: 2, ts: Date.now(), market: "a", years: HISTORY_YEARS,
-    partial: partialA, inds: indList, rows
+
+  const pack = {
+    v: 3, ts: Date.now(), market: "a", years: HISTORY_YEARS,
+    partial: partialA, inds: indList,
+    code: C.code.join("|"),
+    name: C.name.join("|"),
+    px: C.px, pe: C.pe, mc: C.mc,
+    ind: C.ind, ld: C.ld,
+    t: C.t, l: C.l, a3: C.a3,
+    po: C.po, cs: C.cs, ys: C.ys,
+    fl: C.fl.join("|")
   };
+  console.log(`[A] 计算完成 ${C.code.length} 行（已剔除从未分红），行业 ${indList.length} 个`);
+  return pack;
 }
 
 /* ------------------------------ 港股 ------------------------------ */

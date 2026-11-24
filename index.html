@@ -922,7 +922,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     // 10 分钟粒度的 evict key：绕开中间层缓存，又不至于每请求都新 URL
     var bust = Math.floor(Date.now() / 600000);
     // 同源代理优先（走 Cloudflare 边缘、国内快），失败再直连 GitHub raw
-    return getJson("/api/snap?f=" + name + "&v=2&t=" + bust)
+    return getJson("/api/snap?f=" + name + "&v=3&t=" + bust)
       .catch(function(err){
         console.warn("快照同源代理不可用，直连 raw", err);
         return getJson(SNAP_RAW + name + ".json?t=" + bust);
@@ -970,8 +970,38 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     });
   }
 
+  // v3：列式编码。同字段聚在一起，gzip 再省 20%；
+  // 不再存当日涨跌幅（快照本就滞后，刷新时由行情补）与 PB（只在明细里看）
+  function hydrateA3(pack){
+    var inds = pack.inds || [];
+    var codes = String(pack.code || "").split("|");
+    var names = String(pack.name || "").split("|");
+    var fls = String(pack.fl || "").split("|");
+    var out = new Array(codes.length);
+    for (var i = 0; i < codes.length; i++){
+      var ym = pack.ld[i] || 0;
+      var pe = pack.pe[i];
+      out[i] = {
+        code: codes[i], name: names[i], price: pack.px[i],
+        chg: NaN, pe: pe == null ? NaN : pe, pb: NaN,
+        mcap: (pack.mc[i] || 0) * 1e8,
+        ind: inds[pack.ind[i]] || "",
+        listDate: ym ? new Date(Math.floor(ym / 100), (ym % 100) - 1, 1) : null,
+        ttm: pack.t[i] / 1e4, last: pack.l[i] / 1e4, avg3: pack.a3[i] / 1e4,
+        payout: pack.po[i] < 0 ? null : pack.po[i] / 1e4,
+        consec: pack.cs[i], years: pack.ys[i], ttmCnt: 0,
+        flags: parseFlags(fls[i]),
+        records: []
+      };
+    }
+    return out;
+  }
+
   function hydrateA(pack){
-    return pack && pack.v === 2 ? hydrateA2(pack) : hydrateA1(pack);
+    if (!pack) return [];
+    if (pack.v === 3) return hydrateA3(pack);
+    if (pack.v === 2) return hydrateA2(pack);
+    return hydrateA1(pack);
   }
 
   function hydrateHK(pack){
