@@ -398,6 +398,12 @@ async function buildA() {
   // f124 是行情时间(秒，东八区)，换算出这份快照对应的交易日
   const asof = maxTs > 0 ? new Date((maxTs + 8 * 3600) * 1000).toISOString().slice(0, 10) : null;
 
+  if (!C.code.length) {
+    // 一行都没拉到（通常是上游 502）时绝不能写出空文件，
+    // 否则会把工作流「沿用上一次副本」的回填逻辑骗过去
+    throw new Error("行情为空，放弃写入");
+  }
+
   const pack = {
     v: 3, ts: Date.now(), market: "a", years: HISTORY_YEARS, asof,
     partial: partialA, inds: indList,
