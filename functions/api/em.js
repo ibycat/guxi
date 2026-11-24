@@ -1,5 +1,5 @@
 // Cloudflare Pages Function: /api/em?u=<host/path?query>
-// 同源代理东方财富公开接口，规避浏览器跨域与 JSONP 依赖，并在边缘做 60 秒缓存。
+// 同源代理东方财富公开接口：规避浏览器跨域 / JSONP 依赖，并在边缘做分级缓存与重试。
 // 只允许白名单域名，避免被当成开放代理滥用。
 
 const ALLOWED_HOSTS = new Set([
@@ -17,6 +17,10 @@ const CORS = {
   "access-control-allow-headers": "content-type"
 };
 
+// 行情 60s 一刷；分红送配按天变化，缓存 12h，把上游请求量压掉两个数量级
+const TTL_QUOTE = 60;
+const TTL_BONUS = 43200;
+
 function json(body, status) {
   return new Response(JSON.stringify(body), {
     status: status || 200,
@@ -25,6 +29,47 @@ function json(body, status) {
       CORS
     )
   });
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function fetchUpstream(url, attempts) {
+  let last = null;
+  for (let i = 0; i < attempts; i++) {
+    let res;
+    try {
+      res = await fetch(url, {
+        method: "GET",
+        headers: {
+          "user-agent": UA,
+          accept: "*/*",
+          referer: "https://quote.eastmoney.com/"
+        }
+      });
+    } catch (e) {
+      last = { status: 0, body: "network_error" };
+      await sleep(250 * Math.pow(2, i));
+      continue;
+    }
+
+    if (res.ok) {
+      const text = await res.text();
+      // 被拦截时上游常返回 HTML 验证页，不能当成功数据用
+      const head = text.replace(/^\uFEFF/, "").trim().charAt(0);
+      if (head === "{" || head === "[") {
+        return { status: 200, body: text };
+      }
+      last = { status: 502, body: "html_response" };
+      break;
+    }
+
+    last = { status: res.status, body: "" };
+    if (res.status !== 429 && res.status < 500) break;
+    await sleep(300 * Math.pow(2, i));
+  }
+  return last || { status: 502, body: "unknown" };
 }
 
 export async function onRequest(context) {
@@ -37,7 +82,8 @@ export async function onRequest(context) {
     return json({ ok: false, error: "method_not_allowed" }, 405);
   }
 
-  const raw = new URL(request.url).searchParams.get("u");
+  const url = new URL(request.url);
+  const raw = url.searchParams.get("u");
   if (!raw) return json({ ok: false, error: "missing_u" }, 400);
 
   let target;
@@ -55,43 +101,45 @@ export async function onRequest(context) {
   target.searchParams.delete("cb");
   target.searchParams.delete("callback");
 
-  const cacheKey = new Request(target.toString(), { method: "GET" });
-  const cache = caches.default;
+  const isBonus = target.search.indexOf("RPT_SHAREBONUS_DET") >= 0;
+  const ttl = isBonus ? TTL_BONUS : TTL_QUOTE;
+  const key = target.toString();
 
-  const hit = await cache.match(cacheKey);
-  if (hit) return hit;
+  if (url.searchParams.get("nocache") !== "1") {
+    const cache = caches.default;
+    const cacheKey = new Request(key, { method: "GET" });
+    const hit = await cache.match(cacheKey);
+    if (hit) return hit;
 
-  let upstream;
-  try {
-    upstream = await fetch(target.toString(), {
-      method: "GET",
-      headers: {
-        "user-agent": UA,
-        accept: "*/*",
-        referer: "https://quote.eastmoney.com/"
-      }
+    const upstream = await fetchUpstream(key, 3);
+    if (upstream.status !== 200) {
+      return json({ ok: false, error: "upstream_" + (upstream.status || "net") }, 502);
+    }
+
+    const res = new Response(upstream.body, {
+      status: 200,
+      headers: Object.assign(
+        {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=" + ttl + ", s-maxage=" + ttl
+        },
+        CORS
+      )
     });
-  } catch (e) {
-    return json({ ok: false, error: "upstream_failed" }, 502);
+
+    context.waitUntil(cache.put(cacheKey, res.clone()));
+    return res;
   }
 
-  if (!upstream.ok) {
-    return json({ ok: false, error: "upstream_" + upstream.status }, 502);
+  const upstream = await fetchUpstream(key, 1);
+  if (upstream.status !== 200) {
+    return json({ ok: false, error: "upstream_" + (upstream.status || "net") }, 502);
   }
-
-  const text = await upstream.text();
-
-  const res = new Response(text, {
+  return new Response(upstream.body, {
     status: 200,
     headers: Object.assign(
-      {
-        "content-type": "application/json; charset=utf-8",
-        "cache-control": "public, max-age=60, s-maxage=300"
-      },
+      { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
       CORS
     )
   });
-
-  context.waitUntil(cache.put(cacheKey, res.clone()));
-  return res;
 }
