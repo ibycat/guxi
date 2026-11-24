@@ -5,7 +5,9 @@
 const ALLOWED_HOSTS = new Set([
   "push2.eastmoney.com",
   "datacenter-web.eastmoney.com",
-  "datacenter.eastmoney.com"
+  "datacenter.eastmoney.com",
+  // 基金自定义区间收益要打基金排行接口（必须带 Referer，代理里统一补）
+  "fund.eastmoney.com"
 ]);
 
 const UA =
@@ -39,6 +41,10 @@ function sleep(ms) {
 }
 
 async function fetchUpstream(url, attempts) {
+  // 基金接口校验 Referer，其它接口沿用行情站的
+  const referer = url.indexOf("fund.eastmoney.com") >= 0
+    ? "https://fund.eastmoney.com/data/fundranking.html"
+    : "https://quote.eastmoney.com/";
   let last = null;
   for (let i = 0; i < attempts; i++) {
     let res;
@@ -48,7 +54,7 @@ async function fetchUpstream(url, attempts) {
         headers: {
           "user-agent": UA,
           accept: "*/*",
-          referer: "https://quote.eastmoney.com/"
+          referer: referer
         }
       });
     } catch (e) {
@@ -59,8 +65,11 @@ async function fetchUpstream(url, attempts) {
 
     if (res.ok) {
       const text = await res.text();
-      const head = text.replace(/^\uFEFF/, "").trim().charAt(0);
+      const body = text.replace(/^\uFEFF/, "").trim();
+      const head = body.charAt(0);
       if (head === "{" || head === "[") return { status: 200, body: text };
+      // 基金排行接口返回的是 `var rankData ={...}`，不是纯 JSON，单独放行
+      if (body.indexOf("var rankData") === 0) return { status: 200, body: text };
       last = { status: 502, body: "html_response" };
       break;
     }
