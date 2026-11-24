@@ -1,10 +1,10 @@
 // Cloudflare Pages Function: /api/hk?mode=quote|div
 //
 // 港股专用聚合接口。作用是把「浏览器拉 22 页派息 + 7 页行情」压成「浏览器发 1 个请求」：
-// 边缘侧用 6 并发把上游分页全部拉完，拼成一个响应返回，并做长缓存。
+// 边缘侧把上游分页全部拉完，拼成一个响应返回，并做长短两级缓存。
 //
 // 为什么不让 Worker 解析后返回汇总值：Pages Functions 免费版 CPU 上限 10ms，
-// 解析 1.7MB JSON 很容易超限被打断。这里只做「拉取 + 拼接」，CPU 开销接近 0，
+// 解析 1.6MB JSON 很容易超限被打断。这里只做「拉取 + 拼接 + gzip」，CPU 开销接近 0，
 // 解析留在浏览器（V8 解析 JSON 非常快，10k 条约几十毫秒）。
 // 分页之间用 \n\n 分隔（东财返回的是压缩 JSON，正文不含换行），前端 split 即可。
 
@@ -27,8 +27,10 @@ const CORS = {
 
 const TTL_QUOTE = 60;
 const TTL_DIV = 43200; // 派息按天变，12h 足够
-const CONCURRENCY = 6; // Workers 单次调用最多 6 个并发外连
+const TTL_PARTIAL = 10; // 有分页没拉到时只短缓存，等下次补全
 const MAX_PAGES = 40;
+const DIV_CONCURRENCY = 6; // datacenter 对并发不敏感，6 连接拉 22 页约 4s
+const QUOTE_CONCURRENCY = 2; // push2 对并发极敏感，6 并发时除首页外全部挂住
 
 function fail(error, status) {
   return new Response(JSON.stringify({ ok: false, error }), {
@@ -96,7 +98,7 @@ async function fetchText(url, tries) {
   throw last;
 }
 
-// 固定 6 并发的任务池，返回与输入等长的数组，失败位置为 null
+// 固定并发的任务池，返回与输入等长的数组，失败位置为 null
 async function poolMap(items, limit, worker) {
   const out = new Array(items.length).fill(null);
   let idx = 0;
@@ -167,12 +169,26 @@ async function handleQuote(url, ctx) {
   const rest = [];
   for (let p = 2; p <= pages; p++) rest.push(p);
 
-  const tail = await poolMap(rest, CONCURRENCY, (p) => fetchText(quoteUrl(universe, p, pz), 2));
+  // push2 对单 IP 的并发连接很敏感：6 并发时除首页外基本全被挂住（实测 24s 拿不到数据）。
+  // 这里压到 2 并发 + 3 次重试，仍未拿到的页再串行补一遍。
+  const tail = await poolMap(rest, QUOTE_CONCURRENCY, (p) =>
+    fetchText(quoteUrl(universe, p, pz), 3)
+  );
   const parts = [first];
-  for (const t of tail) if (t) parts.push(t);
+  const missing = [];
+  for (let i = 0; i < rest.length; i++) {
+    if (tail[i]) parts.push(tail[i]);
+    else missing.push(rest[i]);
+  }
+  for (const p of missing) {
+    try {
+      parts.push(await fetchText(quoteUrl(universe, p, pz), 2));
+    } catch (e) {
+      /* 放弃该页 */
+    }
+  }
 
-  // 有分页失败时缩短缓存，让下次请求有机会补全
-  const ttl = parts.length === pages ? TTL_QUOTE : 10;
+  const ttl = parts.length === pages ? TTL_QUOTE : TTL_PARTIAL;
   const res = bundle(parts, ttl);
   ctx.waitUntil(caches.default.put(new Request(url.toString()), res.clone()));
   return res;
@@ -189,12 +205,9 @@ async function handleDiv(url, ctx) {
   }
 
   let pages = 1;
-  let count = 0;
   try {
-    const j = JSON.parse(first);
-    const r = j.result || {};
+    const r = JSON.parse(first).result || {};
     pages = Math.min(MAX_PAGES, Math.max(1, r.pages || 1));
-    count = r.count || (r.data ? r.data.length : 0);
   } catch (e) {
     return fail("bad_div_json");
   }
@@ -202,11 +215,11 @@ async function handleDiv(url, ctx) {
   const rest = [];
   for (let p = 2; p <= pages; p++) rest.push(p);
 
-  const tail = await poolMap(rest, CONCURRENCY, (p) => fetchText(divUrl(from, p), 2));
+  const tail = await poolMap(rest, DIV_CONCURRENCY, (p) => fetchText(divUrl(from, p), 2));
   const parts = [first];
   for (const t of tail) if (t) parts.push(t);
 
-  const ttl = parts.length === pages ? TTL_DIV : 10;
+  const ttl = parts.length === pages ? TTL_DIV : TTL_PARTIAL;
   const res = bundle(parts, ttl);
   ctx.waitUntil(caches.default.put(new Request(url.toString()), res.clone()));
   return res;
