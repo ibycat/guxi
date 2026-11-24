@@ -127,6 +127,7 @@ GitHub Actions (cron 每日 2 次) ──► scripts/snapshot.mjs ──► data
 - 为什么要用 Actions 而不用 Cloudflare Cron：Pages Functions 没有 Cron Trigger；更关键的是**东财对 Cloudflare 出口 IP 有风控**，抓多了直接 502，而 GitHub Runner 的出口 IP 完全不同
 - 为什么快照不提交到 `main`：Pages 免费版每月只有 **500 次构建**，每 30 分钟一次会打爆配额。改为独立的 `data` 分支 + 单提交 force-push，既不影响构建配额，也不会撑大 `main` 的历史
 - 为什么还要 `/api/snap` 代理：`raw.githubusercontent.com` 在国内又慢又不稳（1.5MB 实测要 50 秒），同源代理走 Cloudflare 边缘，顺手 gzip（A 股 1.47MB → 360KB，港股 196KB → 44KB）
+- **压缩放在 Actions 里做，不放函数里**：Pages Functions 免费版 CPU 上限是 **10ms/次调用**，在函数里 gzip 一个 1.5MB 的 JSON 很可能超限被打断。所以 `snapshot.mjs` 同时产出 `a.json.gz` / `hk.json.gz`，`/api/snap` 只做「取字节 + 打上 `content-encoding: gzip`」的透传，压缩开销恒为 0
 - 回源失败时返回上一次成功缓存的副本，宁可给旧数据也不给空白
 
 ### 快照格式（v3，列式）
