@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>A股股息率排行 · 实时看板</title>
+<title>A股 / 港股股息率排行 · 实时看板</title>
 <style>
 :root{
   --bg:#F6F6F3; --panel:#FFFFFF; --ink:#17181A; --ink2:#5B6068; --ink3:#8B9099;
@@ -51,6 +51,8 @@ header{position:sticky; top:0; z-index:20; background:rgba(246,246,243,.94); bac
 .panel{background:var(--panel); border:1px solid var(--line); border-radius:var(--r);}
 
 .tabs{display:flex; align-items:center; gap:2px; padding:10px 12px 0; border-bottom:1px solid var(--line2); flex-wrap:wrap;}
+.mkbar{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line2);flex-wrap:wrap;}
+.mktip{font-size:11px;color:var(--ink3);line-height:1.5;}
 .tab{appearance:none; border:0; background:transparent; font-family:inherit; font-size:13px; color:var(--ink2); padding:6px 10px 9px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px;}
 .tab.on{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
 .tab .t{font-size:11px; color:var(--ink3); font-weight:400; margin-left:4px;}
@@ -146,7 +148,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 <header>
   <div class="hd">
     <div>
-      <h1>A股股息率排行</h1>
+      <h1>A股 / 港股股息率排行</h1>
       <div class="sub" id="subline">正在连接行情与分红数据…</div>
     </div>
     <div class="hd-right">
@@ -168,6 +170,14 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   <div class="layout">
     <section class="panel">
+      <div class="mkbar">
+        <div class="presets" id="mkSwitch">
+          <button class="on" data-mk="a">A 股</button>
+          <button data-mk="hk">港股</button>
+        </div>
+        <label class="chk" id="hkAllWrap" style="display:none"><input type="checkbox" id="hkAll">含全部港股</label>
+        <span class="mktip" id="mkTip"></span>
+      </div>
       <div class="tabs">
         <button class="tab on" data-tab="ttm">TTM 滚动 12 个月</button>
         <button class="tab" data-tab="last">上年年报</button>
@@ -245,7 +255,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   <footer>
     数据来源：东方财富公开行情与分红送配接口，前端实时拉取，本地缓存 12 小时。<br>
     「TTM」= 近 12 个月内已实施除权的现金分红合计 ÷ 现价；「上年年报」= 上一完整会计年度分红 ÷ 现价；「近 3 年平均」= 近 3 个年度派息合计 ÷ 现价 ÷ 年数。<br>
-    分红率为上年年报每 10 股派息 ÷ 10 ÷ 上年基本每股收益。本页面仅作数据工具，不构成投资建议。
+    A股：分红率为上年年报每 10 股派息 ÷ 10 ÷ 上年基本每股收益。<b>港股</b>：仅计入港币现金派息，美元/人民币派息单列标记且不计入股息率；默认港股通标的（约 668 只），可切换全部港股并自动剔除股价 &lt; 1 港元或市值 &lt; 20 亿港元的仙股。<br>
+    本页面仅作数据工具，不构成投资建议。
   </footer>
 </div>
 
@@ -255,6 +266,10 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   var QUOTE_API = "https://push2.eastmoney.com/api/qt/clist/get";
   var BONUS_API = "https://datacenter-web.eastmoney.com/api/data/v1/get";
+  var HK_DIV_API = "https://datacenter.eastmoney.com/securities/api/data/v1/get";
+  var HK_FS_GGT = "b:DLMK0146";
+  var HK_FS_ALL = "m:128+t:1,m:128+t:2,m:128+t:3,m:128+t:4";
+  var HK_FIELDS = "f2,f3,f9,f12,f14,f20,f100";
   var PROXY = "/api/em?u=";
   var PROXY_OK = null;
   var FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23";
@@ -271,6 +286,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   var S = {
     rows: [], byCode: {},
+    market: "a", hkAll: false,
     tab: "ttm",
     sortKey: "y", sortDir: -1,
     page: 1, size: 50,
@@ -291,12 +307,13 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     for (var k in params){
       if (!Object.prototype.hasOwnProperty.call(params, k)) continue;
       var v = String(params[k]);
-      var safe = /^[A-Za-z0-9_,:+\-\.]+$/.test(v);
+      var safe = /^[A-Za-z0-9_,+:\-\.]+$/.test(v);
       parts.push(k + "=" + (safe ? v : encodeURIComponent(v)));
     }
     return parts.join("&");
   }
 
+  // 优先走同源 /api/em（Cloudflare Pages Function，带边缘缓存）
   function request(base, params, cbKey){
     var qs = buildQuery(params);
     if (PROXY_OK === false) return jsonp(base, qs, cbKey);
@@ -641,6 +658,194 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     return rows;
   }
 
+  /* ---------------- 港股 ---------------- */
+
+  function isHKCode(code){ return /^0\d{4}$/.test(code || ""); }
+
+  function ymd(d){
+    var m = d.getMonth() + 1, dd = d.getDate();
+    return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (dd < 10 ? "0" : "") + dd;
+  }
+
+  function parseHKDps(text){
+    var m = /每股派\s*(港币|港元|人民币|美元|新加坡元|澳元)?\s*([0-9]+(?:\.[0-9]+)?)\s*元/.exec(text || "");
+    if (!m) return null;
+    var ccy = m[1] || "港币";
+    if (ccy === "港元") ccy = "港币";
+    var v = parseFloat(m[2]);
+    if (!isFinite(v) || v <= 0) return null;
+    return { ccy: ccy, dps: v };
+  }
+
+  function loadHKQuotes(onTick){
+    var pz = 100;
+    var base = {
+      po: 1, np: 1, fltt: 2, invt: 2, fid: "f12",
+      fs: S.hkAll ? HK_FS_ALL : HK_FS_GGT,
+      fields: HK_FIELDS
+    };
+    function keep(it){
+      var p = Number(it.f2);
+      return isHKCode(it.f12) && isFinite(p) && p > 0;
+    }
+    return withRetry(function(){
+      return request(QUOTE_API, Object.assign({}, base, { pn: 1, pz: pz, _: Date.now() }), "cb");
+    }).then(function(first){
+      var rows = normDiff(first).filter(keep);
+      var total = (first && first.data && first.data.total) || rows.length;
+      var pages = Math.max(1, Math.ceil(total / pz));
+      onTick && onTick(1, pages);
+      var rest = [];
+      for (var p = 2; p <= pages; p++) rest.push(p);
+      var done = 1, failed = [];
+      function pull(p){
+        return withRetry(function(){
+          return request(QUOTE_API, Object.assign({}, base, { pn: p, pz: pz, _: Date.now() }), "cb");
+        }, 2).then(function(j){
+          normDiff(j).filter(keep).forEach(function(it){ rows.push(it); });
+        });
+      }
+      return runPool(rest, 5, function(p){
+        return pull(p).catch(function(){ failed.push(p); }).then(function(){
+          done++; onTick && onTick(done, pages);
+        });
+      }).then(function(){
+        if (!failed.length) return null;
+        return runPool(failed, 2, function(p){ return pull(p).catch(function(){ fails++; }); });
+      }).then(function(){ return rows; });
+    });
+  }
+
+  function loadHKDiv(fromDate){
+    var base = {
+      reportName: "RPT_HKF10_MAIN_DIVBASIC",
+      columns: "SECURITY_CODE,REPORT_TYPE,EX_DIVIDEND_DATE,YEAR,PLAN_EXPLAIN",
+      filter: "(EX_DIVIDEND_DATE>=\"" + fromDate + "\")",
+      pageSize: 500,
+      sortColumns: "EX_DIVIDEND_DATE",
+      sortTypes: -1,
+      source: "F10",
+      client: "PC"
+    };
+    function req(p){
+      return request(HK_DIV_API, Object.assign({}, base, { pageNumber: p, _: Date.now() }), "callback");
+    }
+    return withRetry(function(){ return req(1); }).then(function(first){
+      var res = first && first.result;
+      if (!res || !res.data) return [];
+      var out = res.data.slice();
+      var pages = res.pages || 1;
+      var rest = [];
+      for (var p = 2; p <= pages; p++) rest.push(p);
+      return runPool(rest, 3, function(p){
+        return withRetry(function(){ return req(p); }, 2).then(function(j){
+          if (j && j.result && j.result.data){
+            for (var i = 0; i < j.result.data.length; i++) out.push(j.result.data[i]);
+          }
+        }).catch(function(){ fails++; });
+      }).then(function(){ return out; });
+    });
+  }
+
+  function buildRowsHK(quotes, recs){
+    var byCode = {};
+    for (var i = 0; i < recs.length; i++){
+      var r = recs[i];
+      var code = r.SECURITY_CODE;
+      if (!code) continue;
+      var p = parseHKDps(r.PLAN_EXPLAIN);
+      if (!p) continue;
+      var ex = String(r.EX_DIVIDEND_DATE || "").replace(/\//g, "-").slice(0, 10);
+      var yr = Number(r.YEAR) || (ex ? +ex.slice(0, 4) : 0);
+      if (!byCode[code]) byCode[code] = [];
+      byCode[code].push({ ex: ex, dps: p.dps, ccy: p.ccy, year: yr, type: r.REPORT_TYPE || "" });
+    }
+
+    var y0 = TODAY.getFullYear();
+    var winFrom = new Date(TODAY.getTime() - 365 * DAY);
+    var rows = [];
+
+    for (var q = 0; q < quotes.length; q++){
+      var it = quotes[q];
+      var c = it.f12;
+      if (!isHKCode(c)) continue;
+      var price = Number(it.f2);
+      if (!isFinite(price) || price <= 0) continue;
+      var mcap = Number(it.f20);
+      if (S.hkAll && ((price < 1) || (isFinite(mcap) && mcap > 0 && mcap < 2e9))) continue;
+
+      var rr = byCode[c] || [];
+      var ttm = 0, ttmCnt = 0, nonHkd = 0, byYear = {};
+      for (var a = 0; a < rr.length; a++){
+        var x = rr[a];
+        if (x.ccy !== "港币"){ nonHkd++; continue; }
+        var d = parseDate(x.ex);
+        if (d && d >= winFrom && d <= TODAY){ ttm += x.dps; ttmCnt++; }
+        if (x.year) byYear[x.year] = (byYear[x.year] || 0) + x.dps;
+      }
+      ttm = ttm / price;
+
+      var lastYr = null;
+      for (var y = y0 - 1; y >= y0 - 2; y--){ if (byYear[y]){ lastYr = y; break; } }
+      var last = lastYr ? byYear[lastYr] / price : 0;
+
+      var consec = 0;
+      for (var yy = y0 - 1; byYear[yy]; yy--) consec++;
+      var years = 0;
+      for (var k = 1; k <= HISTORY_YEARS; k++) if (byYear[y0 - k]) years++;
+
+      var sum3 = 0, n3 = 0;
+      for (var t = 1; t <= 3; t++){ if (byYear[y0 - t]){ sum3 += byYear[y0 - t]; n3++; } }
+      var avg3 = n3 ? (sum3 / n3) / price : 0;
+
+      var flags = [];
+      if (ttm <= 0) flags.push(["none", "无分红"]);
+      if (nonHkd > 0) flags.push(["info", "非港币派息"]);
+      if (ttm > 0 && consec <= 1) flags.push(["warn", "分红不连续"]);
+      if (ttm > 0.10) flags.push(["bad", "需核验"]);
+      if (price < 1) flags.push(["warn", "低价股"]);
+      if (ttm >= 0.04 && consec >= 5) flags.push(["good", "稳健"]);
+
+      rows.push({
+        code: c, name: it.f14 || c, price: price,
+        chg: Number(it.f3), pe: Number(it.f9), pb: NaN,
+        mcap: mcap, ind: String(it.f100 || ""), listDate: null,
+        ttm: ttm, ttmCnt: ttmCnt, last: last, avg3: avg3,
+        payout: null, consec: consec, years: years,
+        flags: flags, hk: true,
+        records: rr.slice().sort(function(m, n){ return n.ex.localeCompare(m.ex); })
+      });
+    }
+    return rows;
+  }
+
+  function loadHK(){
+    var from = ymd(new Date(TODAY.getFullYear() - HISTORY_YEARS, 0, 1));
+    fails = 0;
+    setStatus("load", "加载中");
+    progress(true);
+    $("subline").textContent = "正在拉取" + (S.hkAll ? "全部港股" : "港股通") + "行情与派息记录…";
+
+    return Promise.all([
+      loadHKQuotes(function(d, t){
+        $("subline").textContent = "港股行情 " + d + "/" + t + " 页…";
+      }),
+      loadHKDiv(from)
+    ]).then(function(res){
+      var rows = buildRowsHK(res[0], res[1]);
+      if (!rows.length) throw new Error("数据为空");
+      S.rows = rows;
+      S.historyReady = true;
+      S.loadedAt = Date.now();
+      S.fromCache = false;
+      progress(false);
+      setStatus("ok", "已更新 " + stamp(S.loadedAt));
+      $("subline").textContent = (S.hkAll ? "全部港股 " : "港股通 ") + rows.length.toLocaleString() + " 只 · 港元计价 · 每 5 分钟自动刷新" + (fails ? " · " + fails + " 个分页失败" : "");
+      $("hintTime").textContent = "更新于 " + stamp(S.loadedAt);
+      renderAll();
+    });
+  }
+
   function currentYield(r){
     if (S.tab === "last") return r.last;
     if (S.tab === "avg3") return r.avg3;
@@ -714,7 +919,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     }
     $("metrics").innerHTML =
       '<div class="metric"><div class="k">有效样本</div><div class="v num">' + yv.length.toLocaleString() + '<small>只</small></div></div>' +
-      '<div class="metric"><div class="k">全 A 中位数</div><div class="v num">' + pct(median) + '</div></div>' +
+      '<div class="metric"><div class="k">' + (S.market === "hk" ? "港股中位数" : "全 A 中位数") + '</div><div class="v num">' + pct(median) + '</div></div>' +
       '<div class="metric"><div class="k">股息率 ≥ 5%</div><div class="v num">' + cnt5 + '<small>只</small></div></div>' +
       '<div class="metric"><div class="k">连续分红 ≥ 5 年</div><div class="v num">' + (S.historyReady ? cnt5y + '<small>只</small>' : '<small style="color:var(--ink3)">计算中</small>') + '</div></div>' +
       '<div class="metric"><div class="k">待核验</div><div class="v num">' + cntCheck + '<small>只</small></div></div>';
@@ -751,13 +956,27 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   function detailHtml(r){
     var recs = r.records.slice(0, 8);
     var rowsHtml = "";
-    for (var i = 0; i < recs.length; i++){
-      var x = recs[i];
-      rowsHtml += "<tr><td>" + x.period + "</td><td class='r num'>" + (x.dps * 10).toFixed(2) + "</td><td>" + (x.ex || "—") + "</td><td>" + x.prog + "</td></tr>";
+    var title, head, empty;
+    if (r.hk){
+      title = "派息明细（每股，宣布币种）";
+      head = "<tr><th>年度 / 类型</th><th class='r'>每股派息</th><th>除净日</th></tr>";
+      empty = "<tr><td colspan='3' style='color:var(--ink3)'>无可用派息记录</td></tr>";
+      for (var i = 0; i < recs.length; i++){
+        var x = recs[i];
+        rowsHtml += "<tr><td>" + (x.year || "—") + " " + (x.type || "") + "</td><td class='r num'>" + x.dps.toFixed(3) + " " + x.ccy + "</td><td>" + (x.ex || "—") + "</td></tr>";
+      }
+    } else {
+      title = "分红明细（每 10 股派息，税前）";
+      head = "<tr><th>报告期</th><th class='r'>派息</th><th>除权除息日</th><th>进度</th></tr>";
+      empty = "<tr><td colspan='4' style='color:var(--ink3)'>无可用的已实施分红记录</td></tr>";
+      for (var j = 0; j < recs.length; j++){
+        var y = recs[j];
+        rowsHtml += "<tr><td>" + y.period + "</td><td class='r num'>" + (y.dps * 10).toFixed(2) + "</td><td>" + (y.ex || "—") + "</td><td>" + y.prog + "</td></tr>";
+      }
     }
-    if (!rowsHtml) rowsHtml = "<tr><td colspan='4' style='color:var(--ink3)'>无可用的已实施分红记录</td></tr>";
+    if (!rowsHtml) rowsHtml = empty;
     return '<tr class="detail"><td colspan="10"><div class="dbox">' +
-      "<div><h4>分红明细（每 10 股派息，税前）</h4><table class='dtable'><thead><tr><th>报告期</th><th class='r'>派息</th><th>除权除息日</th><th>进度</th></tr></thead><tbody>" + rowsHtml + "</tbody></table></div>" +
+      "<div><h4>" + title + "</h4><table class='dtable'><thead>" + head + "</thead><tbody>" + rowsHtml + "</tbody></table></div>" +
       "<div><h4>关键指标</h4><div class='kv'>" +
       "<span>股息率 TTM</span><span class='num'>" + pct(r.ttm) + "</span>" +
       "<span>上年年报</span><span class='num'>" + pct(r.last) + "</span>" +
@@ -843,7 +1062,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     Object.keys(inds).sort().forEach(function(k){ opts += '<option value="' + k + '">' + k + "</option>"; });
     sel.innerHTML = opts;
     sel.value = cur;
-    $("hintFilter").textContent = (S.exST ? "ST / " : "") + "次新";
+    $("hintFilter").textContent = S.market === "hk" ? "仙股" : ((S.exST ? "ST / " : "") + "次新");
+    $("mkTip").textContent = S.market === "hk" ? "仅港币现金派息计入股息率；美元/人民币派息单列标记" : "";
   }
 
   function setStatus(state, text){
@@ -863,6 +1083,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   }
 
   function saveCache(){
+    if (S.market === "hk") return;
     try{
       var pack = { ts: Date.now(), rows: S.rows.map(function(r){
         return [r.code, r.name, r.price, r.chg, r.pe, r.pb, r.mcap, r.ind, r.listDate ? r.listDate.getTime() : 0,
@@ -908,6 +1129,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   }
 
   function loadFull(){
+    if (S.market === "hk") return loadHK();
     var parts = buildPeriods();
     var quotePages = 0, bonusDone = 0;
     var quotes = null, recs = [];
@@ -940,7 +1162,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       $("hintTime").textContent = "更新于 " + stamp(S.loadedAt);
       renderAll();
 
-      if (!parts.hist.length){ S.historyReady = true; saveCache(); renderAll(); return null; }
+      if (!parts.hist.length) { S.historyReady = true; saveCache(); renderAll(); return null; }
       progress(true);
       return loadBonus(parts.hist, function(d, t){
         $("subline").textContent = "分红历史 " + d + "/" + t + " 期 · 连分年数补齐中…";
@@ -955,10 +1177,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
         $("subline").textContent = "全市场 " + S.rows.length.toLocaleString() + " 只 · 数据源 东方财富 · 每 5 分钟自动刷新" + (fails ? " · " + fails + " 个分页失败" : "");
         renderAll();
       }).catch(function(err){
-        S.historyReady = true;
         progress(false);
         $("subline").textContent = "全市场 " + S.rows.length.toLocaleString() + " 只 · 分红历史未补全，连分年数可能偏低";
-        renderAll();
         console.warn(err);
       });
     });
@@ -966,6 +1186,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   function refreshQuotes(){
     if (refreshing) return;
+    if (S.market === "hk"){ loadHK().catch(function(err){ progress(false); setStatus("err", "刷新失败"); console.warn(err); }); return; }
     refreshing = true;
     var btn = $("refreshBtn");
     btn.disabled = true;
@@ -1052,7 +1273,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "A股股息率排行_" + (TODAY.getFullYear() + String(TODAY.getMonth() + 1).padStart(2, "0") + String(TODAY.getDate()).padStart(2, "0")) + ".csv";
+    a.download = (S.market === "hk" ? "港股" : "A股") + "股息率排行_" + (TODAY.getFullYear() + String(TODAY.getMonth() + 1).padStart(2, "0") + String(TODAY.getDate()).padStart(2, "0")) + ".csv";
     document.body.appendChild(a);
     a.click();
     setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -1111,6 +1332,45 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       renderTable();
     });
 
+    $("mkSwitch").addEventListener("click", function(e){
+      var b = e.target.closest("button[data-mk]");
+      if (!b) return;
+      var mk = b.getAttribute("data-mk");
+      if (mk === S.market) return;
+      document.querySelectorAll("#mkSwitch button").forEach(function(o){ o.classList.remove("on"); });
+      b.classList.add("on");
+      S.market = mk;
+      S.rows = [];
+      S.page = 1;
+      S.ind = "";
+      S.preset = "all";
+      S.open = {};
+      $("ind").innerHTML = '<option value="">全部行业</option>';
+      document.querySelectorAll("#presets button").forEach(function(o){ o.classList.remove("on"); });
+      document.querySelector('#presets button[data-preset="all"]').classList.add("on");
+      $("hkAllWrap").style.display = (mk === "hk") ? "inline-flex" : "none";
+      $("hintFilter").textContent = (mk === "hk") ? "仙股" : (S.exST ? "ST / " : "") + "次新";
+      $("mkTip").textContent = (mk === "hk") ? "仅港币现金派息计入股息率；美元/人民币派息单列标记" : "";
+      $("tbody").innerHTML = '<tr><td colspan="10"><div class="skel">数据加载中…</div></td></tr>';
+      setStatus("load", "加载中");
+      loadFull().catch(function(err){
+        progress(false);
+        setStatus("err", "加载失败");
+        $("subline").textContent = "数据加载失败";
+        $("tbody").innerHTML = '<tr><td colspan="10"><div class="error">加载失败：' + (err && err.message ? err.message : "未知错误") + "</div></td></tr>";
+      });
+    });
+
+    $("hkAll").addEventListener("change", function(e){
+      S.hkAll = e.target.checked;
+      if (S.market !== "hk") return;
+      S.rows = [];
+      S.page = 1;
+      $("tbody").innerHTML = '<tr><td colspan="10"><div class="skel">数据加载中…</div></td></tr>';
+      setStatus("load", "加载中");
+      loadFull().catch(function(err){ progress(false); setStatus("err", "加载失败"); console.warn(err); });
+    });
+
     $("refreshBtn").addEventListener("click", function(){
       if (S.rows.length) refreshQuotes(); else boot();
     });
@@ -1119,7 +1379,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   }
 
   function boot(){
-    var cached = readCache();
+    var cached = S.market === "a" ? readCache() : null;
     if (cached){
       S.rows = cached.rows;
       S.loadedAt = cached.ts;
