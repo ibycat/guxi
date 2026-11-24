@@ -235,7 +235,25 @@ const num = (v, dflt) => {
 
 async function buildA() {
   console.log("[A] 拉取行情…");
-  const q = await pullClist(FS_A, FS_A_FIELDS, 0);
+  // 一次查 4 个市场（深主板/创业板/沪主板/科创板）的合并语句在东财侧偏重，
+  // 实测最容易吃 502；拆成 4 次单独的板块查询后成功率明显更高。
+  const FS_PARTS = ["m:0+t:6", "m:0+t:80", "m:1+t:2", "m:1+t:23"];
+  const merged = [];
+  let totalSum = 0, pagesSum = 0, okPagesSum = 0;
+  for (const fsCode of FS_PARTS) {
+    try {
+      const part = await pullClist(fsCode, FS_A_FIELDS, 0);
+      merged.push(...part.rows);
+      totalSum += part.total;
+      pagesSum += part.pages;
+      okPagesSum += part.okPages;
+      console.log(`  ${fsCode}: ${part.rows.length}/${part.total}`);
+    } catch (e) {
+      console.log(`  ${fsCode}: 失败 ${e && e.message}`);
+    }
+    await sleep(1500);
+  }
+  const q = { rows: merged, total: totalSum, pages: pagesSum, okPages: okPagesSum };
   console.log(`[A] 行情 ${q.okPages}/${q.pages} 页，${q.rows.length}/${q.total} 只`);
   if (q.rows.length < q.total * 0.6) {
     throw new Error(`行情严重缺失：${q.rows.length}/${q.total}`);
