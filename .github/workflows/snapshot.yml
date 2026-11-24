@@ -26,16 +26,16 @@ jobs:
         with:
           node-version: "20"
 
-      # 先把上一次的产物取回来：某个市场这次抓失败时，沿用旧文件而不是丢掉
-      - name: 恢复上一次快照
+      # 先把上一次的产物取到 prev/：某个市场这次抓失败时，再回填，避免丢掉
+      - name: 备份上一次快照
         run: |
-          mkdir -p out
+          mkdir -p prev out
           if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
             git fetch --depth=1 origin data
             for f in a.json hk.json; do
-              git show "FETCH_HEAD:$f" > "out/$f" 2>/dev/null || rm -f "out/$f"
+              git show "FETCH_HEAD:$f" > "prev/$f" 2>/dev/null || rm -f "prev/$f"
             done
-            ls -lh out/ || true
+            ls -lh prev/ || true
           else
             echo "data 分支还不存在，本次全量生成"
           fi
@@ -45,10 +45,29 @@ jobs:
           SNAPSHOT_DIR: out
         run: node scripts/snapshot.mjs
 
-      - name: 检查产物
+      # 本轮没产出的市场，用上一次的文件顶上（只有 out/ 里确实没有才回填）
+      - name: 回填上次产物
         run: |
-          ls -lh out/
+          set -e
+          for f in a.json hk.json; do
+            if [ -s "out/$f" ]; then
+              echo "本轮已生成 $f"
+            elif [ -s "prev/$f" ]; then
+              cp "prev/$f" "out/$f"
+              echo "本轮 $f 失败，沿用上一次的副本"
+            fi
+            [ -s "out/$f" ] && echo "OK $f $(wc -c < "out/$f") bytes" || echo "缺 $f"
+          done
+          # 两个都没有才算失败
           test -s out/a.json || test -s out/hk.json
+
+      - name: 校验产物是合法 JSON
+        run: |
+          set -e
+          for f in out/a.json out/hk.json; do
+            [ -s "$f" ] || continue
+            node -e "const d=require('./$f'); if(!d.rows||!d.rows.length) { console.error('$f 没有数据'); process.exit(1) } console.log('$f ok', d.rows.length, '行, 版本', d.v || 1)"
+          done
 
       - name: 推送到 data 分支（单提交 force-push，不污染 main 历史）
         run: |

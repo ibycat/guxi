@@ -929,7 +929,28 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       });
   }
 
-  function hydrateA(pack){
+  // 快照有两个版本的格式：v1（内嵌分红明细，1.4MB）、v2（瘦身，只留指标）。
+  // 生成脚本偶尔会因上游 502 失败、data 分支继续保留上一版文件，
+  // 所以这里两个版本都要能读，避免格式错位把页面搞乱。
+  function hydrateA1(pack){
+    return pack.rows.map(function(a){
+      return {
+        code: a[0], name: a[1], price: a[2],
+        chg: a[3], pe: a[4], pb: a[5], mcap: a[6], ind: a[7],
+        listDate: a[8] ? new Date(a[8]) : null,
+        ttm: a[9] / 1e6, last: a[10] / 1e6, avg3: a[11] / 1e6,
+        payout: a[12] < 0 ? null : a[12] / 1e4,
+        consec: a[13], years: a[14], ttmCnt: a[15],
+        flags: parseFlags(a[16]),
+        records: String(a[17] || "").split(";").filter(Boolean).map(function(x){
+          var p = x.split(",");
+          return { period: p[0], dps: Number(p[1]), ex: p[2], prog: p[3], eps: 0 };
+        })
+      };
+    });
+  }
+
+  function hydrateA2(pack){
     var inds = pack.inds || [];
     return pack.rows.map(function(a){
       var ym = a[8] || 0;
@@ -947,6 +968,10 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
         records: []
       };
     });
+  }
+
+  function hydrateA(pack){
+    return pack && pack.v === 2 ? hydrateA2(pack) : hydrateA1(pack);
   }
 
   function hydrateHK(pack){
