@@ -232,14 +232,17 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
               <th style="width:34px">#</th>
               <th data-sort="name">名称 / 代码</th>
               <th class="r" data-sort="price">收盘价</th>
+              <th class="r" data-sort="chg">涨跌幅</th>
               <th class="r" data-sort="y">股息率</th>
               <th class="r" data-sort="consec" title="近 6 年内连续分红的年数，6+ 表示窗口内每年都有">连分年数</th>
               <th class="r" data-sort="payout">分红率</th>
               <th class="r" data-sort="mcap">总市值</th>
+              <th class="r" data-sort="pe">PE</th>
+              <th class="r" data-sort="pb">PB</th>
               <th>标记</th>
             </tr>
           </thead>
-          <tbody id="tbody"><tr><td colspan="8"><div class="skel">数据加载中…</div></td></tr></tbody>
+          <tbody id="tbody"><tr><td colspan="11"><div class="skel">数据加载中…</div></td></tr></tbody>
         </table>
       </div>
       <div class="pager">
@@ -933,11 +936,15 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   // 快照有两个版本的格式：v1（内嵌分红明细，1.4MB）、v2（瘦身，只留指标）。
   // 生成脚本偶尔会因上游 502 失败、data 分支继续保留上一版文件，
   // 所以这里两个版本都要能读，避免格式错位把页面搞乱。
+  // 数值统一归一：JSON 里的 null 会让 isFinite(null) 误判为 true，
+  // 之后调 toFixed 直接崩，所以入口处一律转成 NaN。
+  function nz(v){ return v == null ? NaN : v; }
+
   function hydrateA1(pack){
     return pack.rows.map(function(a){
       return {
         code: a[0], name: a[1], price: a[2],
-        chg: a[3], pe: a[4], pb: a[5], mcap: a[6], ind: a[7],
+        chg: nz(a[3]), pe: nz(a[4]), pb: nz(a[5]), mcap: a[6], ind: a[7],
         listDate: a[8] ? new Date(a[8]) : null,
         ttm: a[9] / 1e6, last: a[10] / 1e6, avg3: a[11] / 1e6,
         payout: a[12] < 0 ? null : a[12] / 1e4,
@@ -957,7 +964,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       var ym = a[8] || 0;
       return {
         code: a[0], name: a[1], price: a[2],
-        chg: a[3], pe: a[4], pb: a[5],
+        chg: nz(a[3]), pe: nz(a[4]), pb: nz(a[5]),
         mcap: (a[6] || 0) * 1e8,
         ind: inds[a[7]] || "",
         listDate: ym ? new Date(Math.floor(ym / 100), (ym % 100) - 1, 1) : null,
@@ -971,21 +978,24 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     });
   }
 
-  // v3：列式编码。同字段聚在一起，gzip 再省 20%；
-  // 不再存当日涨跌幅（快照本就滞后，刷新时由行情补）与 PB（只在明细里看）
+  // v3：列式编码。同字段聚在一起，gzip 再省 20%
   function hydrateA3(pack){
     var inds = pack.inds || [];
     var codes = String(pack.code || "").split("|");
     var names = String(pack.name || "").split("|");
     var fls = String(pack.fl || "").split("|");
+    var chgs = pack.chg || [];
     var pes = pack.pe || [];
+    var pbs = pack.pb || [];
     var out = new Array(codes.length);
     for (var i = 0; i < codes.length; i++){
       var ym = pack.ld[i] || 0;
-      var pe = pes[i];
+      var pe = pes[i], pb = pbs[i], cg = chgs[i];
       out[i] = {
         code: codes[i], name: names[i], price: pack.px[i],
-        chg: NaN, pe: pe == null ? NaN : pe, pb: NaN,
+        chg: cg == null ? NaN : cg,
+        pe: pe == null ? NaN : pe,
+        pb: pb == null ? NaN : pb,
         mcap: (pack.mc[i] || 0) * 1e8,
         ind: inds[pack.ind[i]] || "",
         listDate: ym ? new Date(Math.floor(ym / 100), (ym % 100) - 1, 1) : null,
@@ -1010,7 +1020,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     return pack.rows.map(function(a){
       return {
         code: a[0], name: a[1], price: a[2],
-        chg: a[3], pe: a[4], pb: NaN, mcap: a[5], ind: a[6], listDate: null,
+        chg: nz(a[3]), pe: nz(a[4]), pb: nz(a[15]), mcap: a[5], ind: a[6], listDate: null,
         ttm: a[7] / 1e6, last: a[8] / 1e6, avg3: a[9] / 1e6,
         payout: null, consec: a[10], years: a[11], ttmCnt: a[12],
         flags: parseFlags(a[13]), hk: true,
@@ -1225,12 +1235,15 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   }
 
   function kvHtml(r){
-    return "<span>股息率 TTM</span><span class='num'>" + pct(r.ttm) + "</span>" +
+    return "<span>收盘价</span><span class='num'>" + fmtPrice(r.price) + "</span>" +
+      "<span>涨跌幅</span><span class='num'>" + (!isFinite(r.chg) ? "—" : (r.chg > 0 ? "+" : "") + r.chg.toFixed(2) + "%") + "</span>" +
+      "<span>股息率 TTM</span><span class='num'>" + pct(r.ttm) + "</span>" +
       "<span>上年年报</span><span class='num'>" + pct(r.last) + "</span>" +
       "<span>近 3 年均值</span><span class='num'>" + pct(r.avg3) + "</span>" +
       "<span>连续分红</span><span class='num'>" + (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") + "（近 " + HISTORY_YEARS + " 年 " + r.years + " 次）</span>" +
       "<span>分红率</span><span class='num'>" + (r.payout == null ? "—" : pct(r.payout, 0)) + "</span>" +
       "<span>总市值</span><span class='num'>" + fmtCap(r.mcap) + "</span>" +
+      "<span>PE / PB</span><span class='num'>" + (isFinite(r.pe) && r.pe !== 0 ? r.pe.toFixed(1) : "—") + " / " + (isFinite(r.pb) && r.pb !== 0 ? r.pb.toFixed(2) : "—") + "</span>" +
       "<span>所属行业</span><span>" + (r.ind || "—") + "</span>" +
       "<span>上市日期</span><span>" + (r.listDate ? (r.listDate.getFullYear() + "-" + String(r.listDate.getMonth() + 1).padStart(2, "0")) : "—") + "</span>";
   }
@@ -1241,7 +1254,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       var hint = detailState[r.code] === 3
         ? "明细加载失败，稍后重试或点右上「刷新」"
         : "正在加载分红明细…";
-      return '<tr class="detail"><td colspan="8"><div class="dbox">' +
+      return '<tr class="detail"><td colspan="11"><div class="dbox">' +
         "<div><h4>分红明细（每 10 股派息，税前）</h4>" +
         "<div style='color:var(--ink3);font-size:11.5px;padding:8px 0'>" + hint + "</div></div>" +
         "<div><h4>关键指标</h4><div class='kv'>" + kvHtml(r) + "</div></div></div></td></tr>";
@@ -1268,7 +1281,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       }
     }
     if (!rowsHtml) rowsHtml = empty;
-    return '<tr class="detail"><td colspan="8"><div class="dbox">' +
+    return '<tr class="detail"><td colspan="11"><div class="dbox">' +
       "<div><h4>" + title + "</h4><table class='dtable'><thead>" + head + "</thead><tbody>" + rowsHtml + "</tbody></table></div>" +
       "<div><h4>关键指标</h4><div class='kv'>" + kvHtml(r) + "</div></div></div></td></tr>";
   }
@@ -1293,20 +1306,26 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     var slice = list.slice(start, start + S.size);
 
     if (!total){
-      $("tbody").innerHTML = '<tr><td colspan="8"><div class="skel">没有符合条件的标的，试着放宽筛选</div></td></tr>';
+      $("tbody").innerHTML = '<tr><td colspan="11"><div class="skel">没有符合条件的标的，试着放宽筛选</div></td></tr>';
     } else {
       var html = "";
       for (var i = 0; i < slice.length; i++){
         var r = slice[i];
         var yv = currentYield(r);
+        var chg = r.chg;
+        var cls = !isFinite(chg) ? "flat" : (chg > 0 ? "up" : (chg < 0 ? "down" : "flat"));
+        var chgTxt = !isFinite(chg) ? "—" : (chg > 0 ? "+" : "") + chg.toFixed(2) + "%";
         html += '<tr class="row" data-code="' + r.code + '">' +
           '<td class="rank' + (i < 3 && S.sortKey === "y" && S.sortDir === -1 ? " top" : "") + '">' + (start + i + 1) + "</td>" +
           '<td><span class="nm">' + r.name + '</span><span class="code num">' + r.code + '</span><span class="ind hide-sm">' + (r.ind || "") + "</span></td>" +
           '<td class="r num">' + fmtPrice(r.price) + "</td>" +
+          '<td class="r num ' + cls + '">' + chgTxt + "</td>" +
           '<td class="r"><span class="yield num">' + pct(yv) + "</span></td>" +
           '<td class="r num">' + (S.historyReady ? (r.consec ? (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") : "—") : "<span style=\"color:var(--ink3)\">…</span>") + "</td>" +
           '<td class="r num">' + (r.payout == null ? "—" : pct(r.payout, 0)) + "</td>" +
           '<td class="r num">' + fmtCap(r.mcap) + "</td>" +
+          '<td class="r num">' + (isFinite(r.pe) && r.pe !== 0 ? r.pe.toFixed(1) : "—") + "</td>" +
+          '<td class="r num">' + (isFinite(r.pb) && r.pb !== 0 ? r.pb.toFixed(2) : "—") + "</td>" +
           "<td>" + tagHtml(r.flags) + "</td></tr>";
         if (S.open[r.code]) html += detailHtml(r);
       }
@@ -1515,7 +1534,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     progress(false);
     setStatus("err", "快照不可用");
     $("subline").textContent = "快照暂时取不到";
-    $("tbody").innerHTML = '<tr><td colspan="8"><div class="error">快照数据暂时取不到（' +
+    $("tbody").innerHTML = '<tr><td colspan="11"><div class="error">快照数据暂时取不到（' +
       (err && err.message ? err.message : "未知错误") +
       "）。<br>页面数据每天更新一次，稍后再点右上「刷新」。</div></td></tr>";
   }
@@ -1546,19 +1565,22 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   function exportCsv(){
     var list = filtered();
-    var head = ["排名","代码","名称","收盘价","股息率TTM","上年年报","近3年均值","连续分红年数","近"+HISTORY_YEARS+"年分红次数","分红率","总市值(亿元)","行业","标记"];
+    var head = ["排名","代码","名称","收盘价","涨跌幅","股息率TTM","上年年报","近3年均值","连续分红年数","近"+HISTORY_YEARS+"年分红次数","分红率","总市值(亿元)","PE","PB","行业","标记"];
     var lines = [head.join(",")];
     for (var i = 0; i < list.length; i++){
       var r = list[i];
       lines.push([
         i + 1, r.code, '"' + r.name.replace(/"/g, '""') + '"',
         r.price.toFixed(2),
+        isFinite(r.chg) ? r.chg.toFixed(2) : "",
         (r.ttm * 100).toFixed(2),
         (r.last * 100).toFixed(2),
         (r.avg3 * 100).toFixed(2),
         r.consec, r.years,
         r.payout == null ? "" : (r.payout * 100).toFixed(1),
         Math.round(r.mcap / 1e8),
+        isFinite(r.pe) ? r.pe.toFixed(2) : "",
+        isFinite(r.pb) ? r.pb.toFixed(2) : "",
         '"' + r.ind + '"',
         '"' + r.flags.map(function(f){ return f[1]; }).join(" ") + '"'
       ].join(","));
@@ -1644,13 +1666,13 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       $("hkAllWrap").style.display = (mk === "hk") ? "inline-flex" : "none";
       $("hintFilter").textContent = (mk === "hk") ? "仙股" : (S.exST ? "ST / " : "") + "次新";
       $("mkTip").textContent = (mk === "hk") ? "仅港币现金派息计入股息率；美元/人民币派息单列标记" : "";
-      $("tbody").innerHTML = '<tr><td colspan="8"><div class="skel">数据加载中…</div></td></tr>';
+      $("tbody").innerHTML = '<tr><td colspan="11"><div class="skel">数据加载中…</div></td></tr>';
       setStatus("load", "加载中");
       loadFull().catch(function(err){
         progress(false);
         setStatus("err", "加载失败");
         $("subline").textContent = "数据加载失败";
-        $("tbody").innerHTML = '<tr><td colspan="8"><div class="error">加载失败：' + (err && err.message ? err.message : "未知错误") + "</div></td></tr>";
+        $("tbody").innerHTML = '<tr><td colspan="11"><div class="error">加载失败：' + (err && err.message ? err.message : "未知错误") + "</div></td></tr>";
       });
     });
 
@@ -1659,7 +1681,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       if (S.market !== "hk") return;
       S.rows = [];
       S.page = 1;
-      $("tbody").innerHTML = '<tr><td colspan="8"><div class="skel">数据加载中…</div></td></tr>';
+      $("tbody").innerHTML = '<tr><td colspan="11"><div class="skel">数据加载中…</div></td></tr>';
       setStatus("load", "加载中");
       loadFull().catch(function(err){ progress(false); setStatus("err", "加载失败"); console.warn(err); });
     });
@@ -1694,7 +1716,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       progress(false);
       setStatus("err", "加载失败");
       $("subline").textContent = "数据加载失败";
-      $("tbody").innerHTML = '<tr><td colspan="8"><div class="error">快照数据暂时取不到（' +
+      $("tbody").innerHTML = '<tr><td colspan="11"><div class="error">快照数据暂时取不到（' +
         (err && err.message ? err.message : "未知错误") +
         "）。<br>页面数据每天收盘后更新一次，稍后再试。</div></td></tr>";
     });
