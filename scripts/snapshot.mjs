@@ -272,6 +272,14 @@ async function buildA() {
   const winFrom = new Date(TODAY.getTime() - 365 * DAY);
   const rows = [];
 
+  // 行业名重复度很高，抽成字典按索引存，省下几十 KB
+  const indList = [];
+  const indIdx = new Map();
+  const indId = (name) => {
+    if (!indIdx.has(name)) { indIdx.set(name, indList.length); indList.push(name); }
+    return indIdx.get(name);
+  };
+
   for (const it of q.rows) {
     const code = it.f12;
     if (!code) continue;
@@ -279,11 +287,9 @@ async function buildA() {
     if (!(price > 0)) continue;
     const ind = String(it.f100 || "").replace(/[ⅠⅡⅢ]+$/, "");
 
-    let listDate = 0;
+    let listYm = 0;
     const ld = num(it.f26, 0);
-    if (ld > 19000101) {
-      listDate = new Date(Math.floor(ld / 10000), (Math.floor(ld / 100) % 100) - 1, 1).getTime();
-    }
+    if (ld > 19000101) listYm = Math.floor(ld / 100);
 
     const all = byCode.get(code) || [];
     const impl = all.filter((x) => x.prog.includes("实施"));
@@ -330,19 +336,34 @@ async function buildA() {
     if (ttm >= 0.03 && consec >= 5 && payout != null && payout >= 0.2 && payout <= 0.75)
       flags.push("g:稳健");
 
+    // 快照只留指标：分红明细改成点开某一行时按需拉，体积降一个数量级
+    const r1 = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
+    const r2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+
     rows.push([
-      code, it.f14 || code, price,
-      num(it.f3, NaN), num(it.f9, NaN), num(it.f23, NaN), num(it.f20, 0), ind, listDate,
-      Math.round(ttm * 1e6), Math.round(last * 1e6), Math.round(avg3 * 1e6),
+      code,
+      it.f14 || code,
+      r2(price),
+      r2(num(it.f3, NaN)),
+      r1(num(it.f9, NaN)),
+      r2(num(it.f23, NaN)),
+      Math.round(num(it.f20, 0) / 1e8),
+      indId(ind),
+      listYm,
+      Math.round(ttm * 1e4),
+      Math.round(last * 1e4),
+      Math.round(avg3 * 1e4),
       payout == null ? -1 : Math.round(payout * 1e4),
-      consec, years, ttmCnt,
-      flags.join("|"),
-      all.slice().sort((a, b) => b.period.localeCompare(a.period)).slice(0, 6)
-        .map((x) => `${x.period},${x.dps},${x.ex},${x.prog}`).join(";")
+      consec,
+      years,
+      flags.join("|")
     ]);
   }
-  console.log(`[A] 计算完成 ${rows.length} 行`);
-  return { ts: Date.now(), market: "a", years: HISTORY_YEARS, partial: partialA, rows };
+  console.log(`[A] 计算完成 ${rows.length} 行，行业 ${indList.length} 个`);
+  return {
+    v: 2, ts: Date.now(), market: "a", years: HISTORY_YEARS,
+    partial: partialA, inds: indList, rows
+  };
 }
 
 /* ------------------------------ 港股 ------------------------------ */
@@ -474,7 +495,7 @@ async function buildHK() {
     ]);
   }
   console.log(`[HK] 计算完成 ${rows.length} 行`);
-  return { ts: Date.now(), market: "hk", years: HISTORY_YEARS, partial: partialHK, rows };
+  return { v: 2, ts: Date.now(), market: "hk", years: HISTORY_YEARS, partial: partialHK, rows };
 }
 
 /* ------------------------------ 主流程 ------------------------------ */
