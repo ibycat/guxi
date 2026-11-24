@@ -7,8 +7,10 @@ name: fundmeta
 
 on:
   schedule:
-    # 30 1 UTC = 09:30 北京时间，避开 07:35 的股票快照
+    # 每天两批（UTC 01:30 / 13:30 = 北京 09:30 / 21:30），每批 3000 只，
+    # 约 7 批铺满 2.1 万只
     - cron: "30 1 * * *"
+    - cron: "30 13 * * *"
   workflow_dispatch:
   push:
     paths:
@@ -21,10 +23,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
-      # 0 = 全量；先用 300 验证解析
-      META_LIMIT: "300"
+      # 每批抓多少只；0 = 一次抓完（会超时，别用）
+      META_LIMIT: "3000"
     steps:
       - uses: actions/checkout@v4
         with:
