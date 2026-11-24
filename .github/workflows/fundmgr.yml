@@ -55,8 +55,10 @@ jobs:
             if(!rows.length){console.error('经理数据为空');process.exit(1)}
             const noAum=rows.filter(r=>r.aum==null).length;
             const noY=rows.filter(r=>r.y==null).length;
-            console.log('经理', rows.length, '| 缺在管规模', noAum, '| 缺从业年限', noY, '| 关联基金', f.count);
+            const noFund=rows.filter(r=>!r.funds||!r.funds.length).length;
+            console.log('经理', rows.length, '| 缺在管规模', noAum, '| 缺从业年限', noY, '| 无关联基金', noFund, '| 基金维度', f.count);
             if(noAum/rows.length>0.3||noY/rows.length>0.3){console.error('关键字段空值率过高');process.exit(1)}
+            if(!f.count){console.error('fundmgr.json 为空 —— 基金链接解析可能失效');process.exit(1)}
           "
 
       - name: 推送 data 分支
