@@ -5,3 +5,6 @@ node_modules/
 *.log
 package-lock.json
 push.bat
+measure_hk.py
+hk1.json
+_check.js

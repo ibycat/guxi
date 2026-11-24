@@ -25,6 +25,7 @@ body{
 .num{font-variant-numeric:tabular-nums; font-feature-settings:"tnum";}
 .wrap{max-width:1280px; margin:0 auto; padding:0 20px 40px;}
 
+/* header */
 header{position:sticky; top:0; z-index:20; background:rgba(246,246,243,.94); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
 .hd{max-width:1280px; margin:0 auto; padding:14px 20px 10px; display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap;}
 .hd h1{font-size:17px; font-weight:600; margin:0; letter-spacing:-.2px;}
@@ -41,15 +42,18 @@ header{position:sticky; top:0; z-index:20; background:rgba(246,246,243,.94); bac
 .prog.on i{width:100%; animation:flow 1.4s ease-in-out infinite; transform-origin:left;}
 @keyframes flow{0%{transform:translateX(-100%) scaleX(.3);}100%{transform:translateX(100%) scaleX(.3);}}
 
+/* metrics */
 .metrics{display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; margin:18px 0 14px;}
 .metric{background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:11px 13px;}
 .metric .k{font-size:11.5px; color:var(--ink3); display:flex; align-items:center; gap:4px;}
 .metric .v{font-size:22px; font-weight:600; letter-spacing:-.4px; margin-top:3px; line-height:1.15;}
 .metric .v small{font-size:12px; font-weight:400; color:var(--ink3); margin-left:2px;}
 
+/* layout */
 .layout{display:grid; grid-template-columns:minmax(0,1fr) 292px; gap:14px; align-items:start;}
 .panel{background:var(--panel); border:1px solid var(--line); border-radius:var(--r);}
 
+/* tabs */
 .tabs{display:flex; align-items:center; gap:2px; padding:10px 12px 0; border-bottom:1px solid var(--line2); flex-wrap:wrap;}
 .mkbar{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line2);flex-wrap:wrap;}
 .mktip{font-size:11px;color:var(--ink3);line-height:1.5;}
@@ -59,6 +63,7 @@ header{position:sticky; top:0; z-index:20; background:rgba(246,246,243,.94); bac
 .hint{padding:7px 12px; font-size:11.5px; color:var(--ink3); border-bottom:1px solid var(--line2); display:flex; gap:14px; flex-wrap:wrap;}
 .hint b{font-weight:500; color:var(--ink2);}
 
+/* toolbar */
 .toolbar{display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line2); flex-wrap:wrap;}
 .search{position:relative; flex:1 1 150px; min-width:130px;}
 .search input{width:100%; font-family:inherit; font-size:12.5px; padding:6px 9px 6px 26px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--ink); outline:none;}
@@ -71,6 +76,7 @@ select.mini{font-family:inherit; font-size:12.5px; padding:6px 6px; border:1px s
 .presets button{appearance:none; border:0; background:transparent; font-family:inherit; font-size:12px; color:var(--ink2); padding:4px 9px; border-radius:5px; cursor:pointer; white-space:nowrap;}
 .presets button.on{background:var(--panel); color:var(--ink); font-weight:500; box-shadow:0 1px 2px rgba(0,0,0,.06);}
 
+/* table */
 .tablewrap{overflow-x:auto;}
 table{width:100%; border-collapse:collapse; font-size:12.5px;}
 thead th{position:sticky; top:0; background:var(--panel); text-align:left; font-weight:500; color:var(--ink3); font-size:11.5px; padding:8px 8px; border-bottom:1px solid var(--line); white-space:nowrap; cursor:pointer; user-select:none;}
@@ -106,12 +112,14 @@ tr.detail td{background:#FCFBF8; border-bottom:1px solid var(--line); padding:0;
 .kv{display:grid; grid-template-columns:76px 1fr; gap:4px 8px; font-size:11.5px;}
 .kv span:nth-child(odd){color:var(--ink3);}
 
+/* pager */
 .pager{display:flex; align-items:center; justify-content:space-between; padding:9px 12px; font-size:12px; color:var(--ink2); flex-wrap:wrap; gap:8px;}
 .pgbtns{display:flex; gap:4px; align-items:center;}
 .pgbtn{min-width:26px; height:26px; padding:0 6px; border:1px solid var(--line); background:var(--panel); border-radius:6px; font-size:12px; color:var(--ink2); cursor:pointer; font-family:inherit;}
 .pgbtn.on{background:var(--ink); color:#fff; border-color:var(--ink);}
 .pgbtn:disabled{opacity:.4; cursor:default;}
 
+/* side */
 .side{padding:12px 13px 14px; position:sticky; top:74px;}
 .side h3{margin:0 0 2px; font-size:13px; font-weight:600;}
 .side .sd{font-size:11px; color:var(--ink3); margin-bottom:12px;}
@@ -307,13 +315,14 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     for (var k in params){
       if (!Object.prototype.hasOwnProperty.call(params, k)) continue;
       var v = String(params[k]);
-      var safe = /^[A-Za-z0-9_,+:\-\.]+$/.test(v);
+      var safe = /^[A-Za-z0-9_,:+\-\.]+$/.test(v);
       parts.push(k + "=" + (safe ? v : encodeURIComponent(v)));
     }
     return parts.join("&");
   }
 
-  // 优先走同源 /api/em（Cloudflare Pages Function，带边缘缓存）
+  // 优先走同源 /api/em（Cloudflare Pages Function，带边缘缓存）；
+  // 静态托管或本地 file:// 打开时自动回退到 JSONP 直连。
   function request(base, params, cbKey){
     var qs = buildQuery(params);
     if (PROXY_OK === false) return jsonp(base, qs, cbKey);
@@ -667,6 +676,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (dd < 10 ? "0" : "") + dd;
   }
 
+  // 解析「每股派港币0.922元」「每股派美元0.5元」「每股派0.05元」这类文本
   function parseHKDps(text){
     var m = /每股派\s*(港币|港元|人民币|美元|新加坡元|澳元)?\s*([0-9]+(?:\.[0-9]+)?)\s*元/.exec(text || "");
     if (!m) return null;
@@ -677,7 +687,49 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     return { ccy: ccy, dps: v };
   }
 
+  // 聚合通道：/api/hk 在边缘侧把全部分页拉完，浏览器只发 1 个请求。
+  // 返回体是若干段压缩 JSON，用 \n\n 分隔。
+  function fetchBundle(qs){
+    return fetch("/api/hk?" + qs, { cache: "no-store" })
+      .then(function(r){
+        if (!r.ok) throw new Error("hk_" + r.status);
+        return r.text();
+      })
+      .then(function(text){
+        if (text.charAt(0) === "{") throw new Error("hk_error_payload");
+        var parts = text.split("\n\n");
+        var out = [];
+        for (var i = 0; i < parts.length; i++){
+          if (!parts[i]) continue;
+          out.push(JSON.parse(parts[i]));
+        }
+        return out;
+      });
+  }
+
   function loadHKQuotes(onTick){
+    function keep(it){
+      var p = Number(it.f2);
+      return isHKCode(it.f12) && isFinite(p) && p > 0;
+    }
+    return fetchBundle("mode=quote&u=" + (S.hkAll ? "all" : "ggt"))
+      .then(function(pages){
+        var rows = [];
+        for (var i = 0; i < pages.length; i++){
+          var add = normDiff(pages[i]);
+          for (var k = 0; k < add.length; k++) if (keep(add[k])) rows.push(add[k]);
+        }
+        onTick && onTick(1, 1);
+        return rows;
+      })
+      .catch(function(err){
+        // 本地 file:// 或函数不可用时回退到逐页直连
+        console.warn("hk quote 聚合失败，回退分页", err);
+        return loadHKQuotesPaged(onTick);
+      });
+  }
+
+  function loadHKQuotesPaged(onTick){
     var pz = 100;
     var base = {
       po: 1, np: 1, fltt: 2, invt: 2, fid: "f12",
@@ -717,6 +769,23 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   }
 
   function loadHKDiv(fromDate){
+    return fetchBundle("mode=div&from=" + encodeURIComponent(fromDate))
+      .then(function(pages){
+        var out = [];
+        for (var i = 0; i < pages.length; i++){
+          var res = pages[i] && pages[i].result;
+          if (!res || !res.data) continue;
+          for (var k = 0; k < res.data.length; k++) out.push(res.data[k]);
+        }
+        return out;
+      })
+      .catch(function(err){
+        console.warn("hk div 聚合失败，回退分页", err);
+        return loadHKDivPaged(fromDate);
+      });
+  }
+
+  function loadHKDivPaged(fromDate){
     var base = {
       reportName: "RPT_HKF10_MAIN_DIVBASIC",
       columns: "SECURITY_CODE,REPORT_TYPE,EX_DIVIDEND_DATE,YEAR,PLAN_EXPLAIN",
@@ -772,6 +841,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       var price = Number(it.f2);
       if (!isFinite(price) || price <= 0) continue;
       var mcap = Number(it.f20);
+      // 全量模式下挡仙股：股价 < 1 港元 或 市值 < 20 亿港元
       if (S.hkAll && ((price < 1) || (isFinite(mcap) && mcap > 0 && mcap < 2e9))) continue;
 
       var rr = byCode[c] || [];
@@ -821,15 +891,14 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   function loadHK(){
     var from = ymd(new Date(TODAY.getFullYear() - HISTORY_YEARS, 0, 1));
+    var t0 = (window.performance && performance.now) ? performance.now() : Date.now();
     fails = 0;
     setStatus("load", "加载中");
     progress(true);
     $("subline").textContent = "正在拉取" + (S.hkAll ? "全部港股" : "港股通") + "行情与派息记录…";
 
     return Promise.all([
-      loadHKQuotes(function(d, t){
-        $("subline").textContent = "港股行情 " + d + "/" + t + " 页…";
-      }),
+      loadHKQuotes(),
       loadHKDiv(from)
     ]).then(function(res){
       var rows = buildRowsHK(res[0], res[1]);
@@ -838,9 +907,13 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       S.historyReady = true;
       S.loadedAt = Date.now();
       S.fromCache = false;
+      var ms = ((window.performance && performance.now) ? performance.now() : Date.now()) - t0;
       progress(false);
       setStatus("ok", "已更新 " + stamp(S.loadedAt));
-      $("subline").textContent = (S.hkAll ? "全部港股 " : "港股通 ") + rows.length.toLocaleString() + " 只 · 港元计价 · 每 5 分钟自动刷新" + (fails ? " · " + fails + " 个分页失败" : "");
+      $("subline").textContent = (S.hkAll ? "全部港股 " : "港股通 ") + rows.length.toLocaleString() +
+        " 只 · 港元计价 · 首屏 " + (ms / 1000).toFixed(2) + "s" +
+        " · 派息 " + res[1].length.toLocaleString() + " 条" +
+        " · 每 5 分钟自动刷新" + (fails ? " · " + fails + " 个分页失败" : "");
       $("hintTime").textContent = "更新于 " + stamp(S.loadedAt);
       renderAll();
     });
@@ -1273,7 +1346,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = (S.market === "hk" ? "港股" : "A股") + "股息率排行_" + (TODAY.getFullYear() + String(TODAY.getMonth() + 1).padStart(2, "0") + String(TODAY.getDate()).padStart(2, "0")) + ".csv";
+    a.download = "A股股息率排行_" + (TODAY.getFullYear() + String(TODAY.getMonth() + 1).padStart(2, "0") + String(TODAY.getDate()).padStart(2, "0")) + ".csv";
     document.body.appendChild(a);
     a.click();
     setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
