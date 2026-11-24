@@ -1,0 +1,74 @@
+name: fundmgr
+
+# 基金经理抓取（从业年限 / 在管规模 / 任职天数）。
+# 依赖 fundmeta.json 里的经理 id 列表，所以要在 fundmeta 之后跑。
+# 先用 MGR_LIMIT=20 验证解析，确认无误再调大。
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/fundmgr.mjs"
+      - ".github/workflows/fundmgr.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MGR_LIMIT: "20"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 取出已有的 data 分支产物
+        run: |
+          mkdir -p out
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git fetch --depth=1 origin data
+            for f in a.json hk.json fund.json fundmeta.json managers.json fundmgr.json; do
+              git show "FETCH_HEAD:$f" > "out/$f" 2>/dev/null || rm -f "out/$f"
+            done
+            echo "已带回：$(ls -1 out | tr '\n' ' ')"
+          fi
+
+      - name: 抓取基金经理
+        env:
+          SNAPSHOT_DIR: out
+        run: node scripts/fundmgr.mjs --limit "$MGR_LIMIT"
+
+      - name: 校验产物
+        run: |
+          set -e
+          node -e "
+            const m=require('./out/managers.json');
+            const f=require('./out/fundmgr.json');
+            const rows=(m.rows||[]).filter(r=>!r.err);
+            if(!rows.length){console.error('经理数据为空');process.exit(1)}
+            const noAum=rows.filter(r=>r.aum==null).length;
+            const noY=rows.filter(r=>r.y==null).length;
+            console.log('经理', rows.length, '| 缺在管规模', noAum, '| 缺从业年限', noY, '| 关联基金', f.count);
+            if(noAum/rows.length>0.3||noY/rows.length>0.3){console.error('关键字段空值率过高');process.exit(1)}
+          "
+
+      - name: 推送 data 分支
+        run: |
+          set -e
+          cd out
+          git init -q -b data
+          git config user.name "guxi-snapshot-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A
+          git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
+          echo "pushed $(ls -1 | tr '\n' ' ')"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
