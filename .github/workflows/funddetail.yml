@@ -1,0 +1,83 @@
+name: funddetail
+
+# 基金详情批量抓取（第三方 API）：全称 / 经理 / 成立日 / 规模 / 业绩基准 / 跟踪指数。
+# 全量约 2.5 万只，每批 12000（约 18 分钟），2~3 批铺满，之后只补新增。
+
+on:
+  schedule:
+    - cron: "50 1 * * *"
+    - cron: "50 13 * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/funddetail.mjs"
+      - ".github/workflows/funddetail.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-branch-writer
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      # 首次先 200 只验证解析，确认后改成 12000
+      DETAIL_LIMIT: "200"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 取出已有的 data 分支产物
+        run: |
+          mkdir -p out
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git fetch --depth=1 origin data
+            for f in a.json hk.json fund.json fundmeta.json fundrank.json funddetail.json managers.json fundmgr.json fundapi_probe.json; do
+              git show "FETCH_HEAD:$f" > "out/$f" 2>/dev/null || rm -f "out/$f"
+            done
+            echo "已带回：$(ls -1 out | tr '\n' ' ')"
+          fi
+
+      - name: 抓取基金详情
+        env:
+          SNAPSHOT_DIR: out
+        run: node scripts/funddetail.mjs --limit "$DETAIL_LIMIT"
+
+      - name: 校验产物
+        run: |
+          set -e
+          node -e "
+            const d=require('./out/funddetail.json');
+            const rows=(d.rows||[]).filter(r=>!r.err);
+            if(!rows.length){console.error('没有成功记录');process.exit(1)}
+            const noFull=rows.filter(r=>!r.full).length;
+            const noScale=rows.filter(r=>r.s==null).length;
+            const noJj=rows.filter(r=>!r.jj).length;
+            const multi=rows.filter(r=>r.gn>1).length;
+            console.log('覆盖', d.count, '/', d.total, '| 缺全称', noFull, '| 缺规模', noScale, '| 缺经理', noJj, '| 有合并份额的基金', multi);
+            if(noFull/rows.length>0.2){console.error('全称缺失过多，解析可能失效');process.exit(1)}
+            if(noScale/rows.length>0.5){console.error('规模缺失过多');process.exit(1)}
+          "
+
+      - name: 推送 data 分支
+        run: |
+          set -e
+          cd out
+          git init -q -b data
+          git config user.name "guxi-snapshot-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A
+          git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
+          echo "pushed $(ls -1 | tr '\n' ' ')"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
