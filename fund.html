@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>公募基金筛选器</title>
+<style>
+:root{
+  --bg:#F6F6F3; --panel:#FFFFFF; --ink:#17181A; --ink2:#5B6068; --ink3:#8B9099;
+  --line:#E4E3DE; --line2:#EEEDE9; --chip:#F1F0EC;
+  --red:#CE3A3A; --green:#12855A; --accent:#A8392C;
+  --warn-bg:#FBF0DC; --warn-ink:#8A5A0B;
+  --r:10px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:13px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+.num{font-variant-numeric:tabular-nums; font-feature-settings:"tnum";}
+.wrap{max-width:1280px; margin:0 auto; padding:0 20px 40px;}
+header{position:sticky; top:0; z-index:20; background:rgba(246,246,243,.94); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
+.hd{max-width:1280px; margin:0 auto; padding:14px 20px 10px; display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+.hd h1{font-size:17px; font-weight:600; margin:0; letter-spacing:-.2px;}
+.hd .sub{font-size:12px; color:var(--ink3); margin-top:3px;}
+.hd-right{display:flex; align-items:center; gap:10px;}
+.btn{appearance:none; border:1px solid var(--line); background:var(--panel); color:var(--ink); font-size:12px; padding:6px 12px; border-radius:7px; cursor:pointer; font-family:inherit; text-decoration:none; display:inline-block;}
+.btn:hover{border-color:#CFCEC8;}
+.help{font-size:11.5px; color:var(--ink3); padding:10px 14px 0;}
+.help b{color:var(--ink2); font-weight:500;}
+.toolbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:12px 14px; border-bottom:1px solid var(--line2);}
+.toolbar input[type="search"]{width:190px; padding:6px 9px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink);}
+.toolbar select{padding:6px 8px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink);}
+.panel{background:var(--panel); border:1px solid var(--line); border-radius:var(--r); margin-top:14px; overflow:hidden;}
+.tblwrap{overflow-x:auto;}
+table{width:100%; border-collapse:collapse; font-size:12.5px;}
+thead th{
+  text-align:left; font-weight:500; color:var(--ink3); font-size:11.5px;
+  padding:9px 10px; border-bottom:1px solid var(--line); background:#FCFBF8;
+  white-space:nowrap; cursor:pointer; user-select:none;
+}
+thead th.r{text-align:right;}
+thead th:hover{color:var(--ink);}
+tbody td{padding:8px 10px; border-bottom:1px solid var(--line2); white-space:nowrap;}
+tbody td.r{text-align:right;}
+tbody tr:hover{background:#FCFBF8;}
+.nm{font-weight:500;}
+.code{color:var(--ink3); font-size:11px; margin-left:6px;}
+.up{color:var(--red);} .down{color:var(--green);} .flat{color:var(--ink3);}
+.tag{display:inline-block; font-size:10.5px; padding:1.5px 6px; border-radius:4px; background:var(--chip); color:var(--ink3);}
+.pager{display:flex; align-items:center; justify-content:space-between; padding:9px 12px; font-size:12px; color:var(--ink2); flex-wrap:wrap; gap:8px;}
+.pgbtns{display:flex; gap:4px; align-items:center;}
+.pgbtn{min-width:26px; height:26px; padding:0 6px; border:1px solid var(--line); background:var(--panel); border-radius:6px; font-size:12px; color:var(--ink2); cursor:pointer; font-family:inherit;}
+.pgbtn.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+.pgbtn:disabled{opacity:.4; cursor:default;}
+.skel{height:180px; display:flex; align-items:center; justify-content:center; color:var(--ink3); font-size:12.5px;}
+.error{margin:14px; padding:14px; border:1px solid #EBD3D0; background:#FDF6F5; border-radius:8px; color:#8C3A32; font-size:12.5px; line-height:1.7;}
+.note{margin-top:14px; font-size:11.5px; color:var(--ink3); line-height:1.8;}
+@media (max-width:720px){
+  .wrap{padding:0 12px 30px;} .hd{padding:12px 12px 8px;}
+  .toolbar input[type="search"]{width:100%;}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hd">
+    <div>
+      <h1>公募基金筛选器</h1>
+      <div class="sub" id="subline">正在读取基金快照…</div>
+    </div>
+    <div class="hd-right">
+      <a class="btn" href="/">← 股息率排行</a>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="help">
+    <span>阶段涨幅均为复权口径；<b>规模为同一只基金全部份额（A/C/E/I/Y 等）合并后的金额</b>。当前版本先提供收益与基础信息，规模与基金经理在管规模作为第二批数据补入。</span>
+  </div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="搜索基金名称 / 代码" autocomplete="off">
+      <select id="m">
+        <option value="">全部类型</option>
+        <option value="open">开放式（非货币）</option>
+        <option value="money">货币基金</option>
+      </select>
+      <select id="y1">
+        <option value="0">近1年不限</option>
+        <option value="10">近1年 ≥ 10%</option>
+        <option value="20">近1年 ≥ 20%</option>
+        <option value="50">近1年 ≥ 50%</option>
+        <option value="-10">近1年 ≤ -10%</option>
+      </select>
+      <select id="ys">
+        <option value="0">成立年限不限</option>
+        <option value="1">成立 ≥ 1 年</option>
+        <option value="3">成立 ≥ 3 年</option>
+        <option value="5">成立 ≥ 5 年</option>
+        <option value="10">成立 ≥ 10 年</option>
+      </select>
+      <button class="btn" id="csvBtn" style="margin-left:auto">导出 CSV</button>
+    </div>
+
+    <div class="tblwrap">
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th style="width:34px">#</th>
+            <th data-sort="n">基金名称 / 代码</th>
+            <th class="r" data-sort="nav">单位净值</th>
+            <th class="r" data-sort="chg">日涨跌</th>
+            <th class="r" data-sort="y1">近1年</th>
+            <th class="r" data-sort="y3">近3年</th>
+            <th class="r" data-sort="ytd">今年来</th>
+            <th class="r" data-sort="since">成立来</th>
+            <th class="r" data-sort="est">成立日</th>
+            <th class="r" data-sort="fee">手续费</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"><tr><td colspan="10"><div class="skel">数据加载中…</div></td></tr></tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <div id="pageInfo">—</div>
+      <div class="pgbtns" id="pgbtns"></div>
+    </div>
+  </div>
+
+  <div class="note">
+    数据来源：天天基金公开排行接口，每日快照一次。<br>
+    本页面仅作数据工具，不构成投资建议。
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var S = { rows: [], sortKey: "y1", sortDir: -1, page: 1, size: 50, q: "", m: "", y1: 0, ys: 0 };
+
+  var $ = function(id){ return document.getElementById(id); };
+
+  function num(v){ return typeof v === "number" && isFinite(v) ? v : NaN; }
+
+  function pct(v, d){
+    if (!isFinite(v)) return "—";
+    return v.toFixed(d == null ? 2 : d) + "%";
+  }
+
+  function signed(v){
+    if (!isFinite(v)) return "—";
+    return (v > 0 ? "+" : "") + v.toFixed(2) + "%";
+  }
+
+  function cls(v){
+    if (!isFinite(v) || v === 0) return "flat";
+    return v > 0 ? "up" : "down";
+  }
+
+  function yearsSince(est){
+    if (!est) return NaN;
+    var d = new Date(est + "T00:00:00");
+    if (isNaN(d)) return NaN;
+    return (Date.now() - d.getTime()) / (365 * 24 * 3600 * 1000);
+  }
+
+  function load(){
+    fetch("/api/snap?f=fund&v=1", { cache: "no-store" })
+      .then(function(r){
+        if (!r.ok) throw new Error("snap_" + r.status);
+        return r.json();
+      })
+      .then(function(pack){
+        var rows = (pack && pack.rows) || [];
+        if (!rows.length) throw new Error("snap_empty");
+        S.rows = rows;
+        $("subline").textContent = "共 " + rows.length.toLocaleString() + " 只基金 · 净值日期 " + (pack.asof || "—");
+        renderAll();
+      })
+      .catch(function(err){
+        $("subline").textContent = "基金数据暂时取不到";
+        $("tbody").innerHTML = '<tr><td colspan="10"><div class="error">基金快照还没生成（' +
+          (err && err.message ? err.message : "未知错误") +
+          "）。<br>首次运行 GitHub Actions 的 fund-snapshot 工作流后即可看到数据。</div></td></tr>";
+      });
+  }
+
+  function filtered(){
+    var q = S.q.trim().toLowerCase();
+    var out = [];
+    for (var i = 0; i < S.rows.length; i++){
+      var r = S.rows[i];
+      if (S.m && r.m !== S.m) continue;
+      if (S.y1 > 0 && !(num(r.y1) >= S.y1)) continue;
+      if (S.y1 < 0 && !(num(r.y1) <= S.y1)) continue;
+      if (S.ys > 0){
+        var y = yearsSince(r.est);
+        if (!(y >= S.ys)) continue;
+      }
+      if (q && r.n.toLowerCase().indexOf(q) < 0 && r.c.indexOf(q) < 0) continue;
+      out.push(r);
+    }
+    var key = S.sortKey, dir = S.sortDir;
+    out.sort(function(a, b){
+      var va, vb;
+      if (key === "n" || key === "est" || key === "fee"){
+        va = a[key] == null ? "" : String(a[key]);
+        vb = b[key] == null ? "" : String(b[key]);
+        return va < vb ? -dir : (va > vb ? dir : 0);
+      }
+      va = num(a[key]); vb = num(b[key]);
+      if (!isFinite(va)) va = -Infinity;
+      if (!isFinite(vb)) vb = -Infinity;
+      return (va - vb) * dir;
+    });
+    return out;
+  }
+
+  function renderTable(){
+    var list = filtered();
+    var total = list.length;
+    var pages = Math.max(1, Math.ceil(total / S.size));
+    if (S.page > pages) S.page = pages;
+    var start = (S.page - 1) * S.size;
+    var slice = list.slice(start, start + S.size);
+
+    if (!total){
+      $("tbody").innerHTML = '<tr><td colspan="10"><div class="skel">没有符合条件的基金，试着放宽筛选</div></td></tr>';
+    } else {
+      var html = "";
+      for (var i = 0; i < slice.length; i++){
+        var r = slice[i];
+        var c = r.m === "money" ? num(r.y7) : num(r.chg);
+        var y1v = r.m === "money" ? num(r.y7) : num(r.y1);
+        html += "<tr>" +
+          '<td class="num">' + (start + i + 1) + "</td>" +
+          '<td><span class="nm">' + r.n + '</span><span class="code num">' + r.c + "</span>" +
+            (r.m === "money" ? '<span class="tag" style="margin-left:6px">货币</span>' : "") + "</td>" +
+          '<td class="r num">' + (r.m === "money" ? "—" : (isFinite(num(r.nav)) ? num(r.nav).toFixed(4) : "—")) + "</td>" +
+          '<td class="r num ' + cls(c) + '">' + (r.m === "money" ? pct(num(r.y7)) : signed(num(r.chg))) + "</td>" +
+          '<td class="r num ' + cls(y1v) + '">' + (r.m === "money" ? "—" : signed(num(r.y1))) + "</td>" +
+          '<td class="r num ' + cls(num(r.y3)) + '">' + (r.m === "money" ? "—" : signed(num(r.y3))) + "</td>" +
+          '<td class="r num ' + cls(num(r.ytd)) + '">' + (r.m === "money" ? "—" : signed(num(r.ytd))) + "</td>" +
+          '<td class="r num ' + cls(num(r.since)) + '">' + (r.m === "money" ? "—" : signed(num(r.since))) + "</td>" +
+          '<td class="r num">' + (r.est || "—") + "</td>" +
+          '<td class="r num">' + (r.fee || "—") + "</td>" +
+          "</tr>";
+      }
+      $("tbody").innerHTML = html;
+    }
+
+    $("pageInfo").textContent = total
+      ? "共 " + total.toLocaleString() + " 只 · 第 " + S.page + " / " + pages + " 页"
+      : "共 0 只";
+
+    var btns = "";
+    btns += '<button class="pgbtn" data-pg="' + (S.page - 1) + '"' + (S.page <= 1 ? " disabled" : "") + ">‹</button>";
+    var from = Math.max(1, S.page - 2), to = Math.min(pages, from + 4);
+    from = Math.max(1, to - 4);
+    for (var p = from; p <= to; p++){
+      btns += '<button class="pgbtn' + (p === S.page ? " on" : "") + '" data-pg="' + p + '">' + p + "</button>";
+    }
+    btns += '<button class="pgbtn" data-pg="' + (S.page + 1) + '"' + (S.page >= pages ? " disabled" : "") + ">›</button>";
+    $("pgbtns").innerHTML = btns;
+  }
+
+  function renderAll(){ renderTable(); }
+
+  function exportCsv(){
+    var list = filtered();
+    var head = ["排名","代码","名称","类型","单位净值","日涨跌","近1年","近3年","今年来","成立来","成立日","手续费"];
+    var lines = [head.join(",")];
+    for (var i = 0; i < list.length; i++){
+      var r = list[i];
+      lines.push([
+        i + 1, r.c, '"' + String(r.n).replace(/"/g, '""') + '"',
+        r.m === "money" ? "货币" : "开放式",
+        r.m === "money" ? "" : (r.nav == null ? "" : r.nav),
+        r.m === "money" ? (r.y7 == null ? "" : r.y7) : (r.chg == null ? "" : r.chg),
+        r.y1 == null ? "" : r.y1,
+        r.y3 == null ? "" : r.y3,
+        r.ytd == null ? "" : r.ytd,
+        r.since == null ? "" : r.since,
+        r.est || "",
+        '"' + (r.fee || "") + '"'
+      ].join(","));
+    }
+    var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "公募基金筛选.csv";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  function bind(){
+    $("q").addEventListener("input", function(e){ S.q = e.target.value; S.page = 1; renderTable(); });
+    $("m").addEventListener("change", function(e){ S.m = e.target.value; S.page = 1; renderTable(); });
+    $("y1").addEventListener("change", function(e){ S.y1 = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
+    $("ys").addEventListener("change", function(e){ S.ys = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
+    $("csvBtn").addEventListener("click", exportCsv);
+
+    document.querySelector("thead").addEventListener("click", function(e){
+      var th = e.target.closest("th[data-sort]");
+      if (!th) return;
+      var key = th.getAttribute("data-sort");
+      if (S.sortKey === key) S.sortDir = -S.sortDir;
+      else { S.sortKey = key; S.sortDir = (key === "n" || key === "est" || key === "fee") ? 1 : -1; }
+      S.page = 1;
+      renderTable();
+    });
+
+    $("pgbtns").addEventListener("click", function(e){
+      var b = e.target.closest("button[data-pg]");
+      if (!b || b.disabled) return;
+      S.page = parseInt(b.getAttribute("data-pg"), 10);
+      renderTable();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
+  bind();
+  load();
+})();
+</script>
+</body>
+</html>
