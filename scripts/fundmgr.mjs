@@ -49,6 +49,15 @@ function toDays(txt) {
   return (y ? Number(y[1]) * 365 : 0) + (d ? Number(d[1]) : 0);
 }
 
+// 任职天数：表格里没有这一列，用起始日期算到今天（已离任的算到离任日）
+function spanDays(from, to) {
+  const a = new Date(from + "T00:00:00");
+  const b = to ? new Date(to + "T00:00:00") : new Date();
+  if (isNaN(a)) return null;
+  const d = Math.round((b - a) / 864e5);
+  return d >= 0 ? d : null;
+}
+
 function parseManager(html, id) {
   const text = stripTags(html);
 
@@ -57,20 +66,23 @@ function parseManager(html, id) {
   const aum = (text.match(/现任基金资产\s*总规模\s*([\d.]+)\s*亿/) || [])[1];
   const nm = (text.match(/基金经理[：:]?\s*([^\s，,]{2,8})\s*的档案/) || [])[1] || "";
 
-  // 「管理过的基金一览」表格：逐行拆 <tr>，找带 6 位代码的行
+  // 「管理过的基金一览」表格：逐行拆 <tr>，找带 6 位代码的行。
+  // 注意链接是协议相对写法 //fund.eastmoney.com/027684.html，不能只认 /027684.html
   const funds = [];
   const rows = html.split(/<tr[\s>]/i);
   for (const r of rows) {
-    const m = r.match(/href="\/(\d{6})\.html"/);
+    const m = r.match(/href="(?:\/\/fund\.eastmoney\.com)?\/(\d{6})\.html"/);
     if (!m) continue;
     const period = r.match(/(\d{4}-\d{2}-\d{2})\s*~\s*(至今|\d{4}-\d{2}-\d{2})/);
     if (!period) continue;
-    const days = (stripTags(r).match(/(\d+年又\d+天|\d+天)/) || [])[1] || "";
+    const from = period[1];
+    const to = period[2];
+    const cur = to === "至今";
     funds.push({
       c: m[1],
-      s: period[1],
-      cur: period[2] === "至今",
-      d: toDays(days)
+      s: from,
+      cur: cur,
+      d: spanDays(from, cur ? null : to)
     });
   }
 
