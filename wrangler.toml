@@ -1,0 +1,6 @@
+name = "guxi"
+compatibility_date = "2026-11-01"
+pages_build_output_dir = "."
+
+# 静态资源就是本目录（index.html + assets），functions/ 由 Pages 自动挂载为 /api/*
+# 无需绑定 KV / D1 / R2，也不需要构建步骤。
