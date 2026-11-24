@@ -46,7 +46,7 @@ const TODAY = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
 const FS_A = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23";
 const FS_A_FIELDS = "f2,f18,f9,f12,f14,f20,f26,f100,f124";
 const FS_HK_GGT = "b:DLMK0146";
-const FS_HK_FIELDS = "f2,f18,f9,f12,f14,f20,f100,f124";
+const FS_HK_FIELDS = "f2,f18,f9,f12,f14,f20,f23,f100,f124";
 
 // 港股派息币种很杂：实测 665 只港股通里，265 只只用人民币派息、28 只只用美元。
 // 只算港币会把近一半标的判成「无分红」，所以在原始记录上折算成港币再计算。
@@ -302,7 +302,7 @@ async function buildA() {
 
   // 列式容器：字段聚在一起，gzip 比行式再省 20%
   const C = {
-    code: [], name: [], px: [], mc: [], ind: [], ld: [],
+    code: [], name: [], px: [], chg: [], pe: [], pb: [], mc: [], ind: [], ld: [],
     t: [], l: [], a3: [], po: [], cs: [], ys: [], fl: []
   };
 
@@ -377,12 +377,16 @@ async function buildA() {
     if (ttm <= 0 && last <= 0 && consec <= 0) continue;
 
     // 列式编码：相同字段聚在一起，gzip 比行式再省 20%。
-    // 不存当日涨跌幅 / PE / PB：这三个都是行情类字段，快照本来就滞后半小时，
-    // 显示陈旧涨跌反而误导；它们由右上角「刷新」走实时行情补齐。
-    // 快照只保留分红口径 + 静态属性（代码、名称、行业、市值、上市日、价格）。
+    // 收盘快照里的涨跌幅/PE/PB 就是当日定格的收盘数据，不存在「滞后误导」，全部保留。
     C.code.push(code);
     C.name.push(it.f14 || code);
     C.px.push(Math.round(price * 100) / 100);
+    const chgV = num(it.f3, NaN);
+    C.chg.push(Number.isFinite(chgV) ? Math.round(chgV * 100) / 100 : null);
+    const peV = num(it.f9, NaN);
+    C.pe.push(Number.isFinite(peV) ? Math.round(peV * 10) / 10 : null);
+    const pbV = num(it.f23, NaN);
+    C.pb.push(Number.isFinite(pbV) ? Math.round(pbV * 100) / 100 : null);
     C.mc.push(Math.round(num(it.f20, 0) / 1e8));
     C.ind.push(indId(ind));
     C.ld.push(listYm);
@@ -409,7 +413,7 @@ async function buildA() {
     partial: partialA, inds: indList,
     code: C.code.join("|"),
     name: C.name.join("|"),
-    px: C.px, mc: C.mc,
+    px: C.px, chg: C.chg, pe: C.pe, pb: C.pb, mc: C.mc,
     ind: C.ind, ld: C.ld,
     t: C.t, l: C.l, a3: C.a3,
     po: C.po, cs: C.cs, ys: C.ys,
@@ -551,7 +555,9 @@ async function buildHK() {
       consec, years, ttmCnt,
       flags.join("|"),
       rr.slice().sort((a, b) => b.ex.localeCompare(a.ex)).slice(0, 8)
-        .map((x) => `${x.year},${x.dps},${x.ex},${x.ccy},${x.type}`).join(";")
+        .map((x) => `${x.year},${x.dps},${x.ex},${x.ccy},${x.type}`).join(";"),
+      // 追加在末尾，避免打乱已有下标
+      Number.isFinite(num(it.f23, NaN)) ? Math.round(num(it.f23, 0) * 100) / 100 : null
     ]);
   }
   console.log(`[HK] 计算完成 ${rows.length} 行`);
