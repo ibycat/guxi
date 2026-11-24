@@ -13,6 +13,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -621,10 +622,17 @@ async function main() {
       const pack = await fn();
       const text = JSON.stringify(pack);
       fs.writeFileSync(path.join(outDir, name + ".json"), text);
+      // 同时产出预压缩版本：Pages Function 免费版 CPU 只有 10ms，
+      // 在函数里 gzip 大 JSON 会超限，所以压缩在这里（Actions 机器上）做完，
+      // 函数侧只做字节透传。
+      const gz = zlib.gzipSync(Buffer.from(text, "utf8"), { level: 9 });
+      fs.writeFileSync(path.join(outDir, name + ".json.gz"), gz);
       const n = pack.rows
         ? pack.rows.length
         : String(pack.code || "").split("|").filter(Boolean).length;
-      console.log(`OK ${name}.json  ${(text.length / 1024).toFixed(0)}KB  ${n} 行`);
+      console.log(
+        `OK ${name}.json  ${(text.length / 1024).toFixed(0)}KB  →  gz ${(gz.length / 1024).toFixed(0)}KB  ${n} 行`
+      );
       okCount++;
     } catch (e) {
       // 单个市场失败不影响另一个；旧文件由工作流从上一次产物恢复
