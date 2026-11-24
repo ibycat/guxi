@@ -272,7 +272,7 @@ async function buildA() {
   const winFrom = new Date(TODAY.getTime() - 365 * DAY);
   // 列式容器：字段聚在一起，gzip 比行式再省 20%
   const C = {
-    code: [], name: [], px: [], pe: [], mc: [], ind: [], ld: [],
+    code: [], name: [], px: [], mc: [], ind: [], ld: [],
     t: [], l: [], a3: [], po: [], cs: [], ys: [], fl: []
   };
 
@@ -344,13 +344,12 @@ async function buildA() {
     if (ttm <= 0 && last <= 0 && consec <= 0) continue;
 
     // 列式编码：相同字段聚在一起，gzip 比行式再省 20%。
-    // 不存当日涨跌幅：快照本来就是 30 分钟前的，实时性没有意义，刷新时由行情接口补。
-    // 不存 PB：只在明细里显示，为它多占 4000 多个浮点数不划算。
+    // 不存当日涨跌幅 / PE / PB：这三个都是行情类字段，快照本来就滞后半小时，
+    // 显示陈旧涨跌反而误导；它们由右上角「刷新」走实时行情补齐。
+    // 快照只保留分红口径 + 静态属性（代码、名称、行业、市值、上市日、价格）。
     C.code.push(code);
     C.name.push(it.f14 || code);
     C.px.push(Math.round(price * 100) / 100);
-    const pe = num(it.f9, NaN);
-    C.pe.push(Number.isFinite(pe) ? Math.round(pe * 10) / 10 : null);
     C.mc.push(Math.round(num(it.f20, 0) / 1e8));
     C.ind.push(indId(ind));
     C.ld.push(listYm);
@@ -368,7 +367,7 @@ async function buildA() {
     partial: partialA, inds: indList,
     code: C.code.join("|"),
     name: C.name.join("|"),
-    px: C.px, pe: C.pe, mc: C.mc,
+    px: C.px, mc: C.mc,
     ind: C.ind, ld: C.ld,
     t: C.t, l: C.l, a3: C.a3,
     po: C.po, cs: C.cs, ys: C.ys,

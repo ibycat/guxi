@@ -977,10 +977,11 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     var codes = String(pack.code || "").split("|");
     var names = String(pack.name || "").split("|");
     var fls = String(pack.fl || "").split("|");
+    var pes = pack.pe || [];
     var out = new Array(codes.length);
     for (var i = 0; i < codes.length; i++){
       var ym = pack.ld[i] || 0;
-      var pe = pack.pe[i];
+      var pe = pes[i];
       out[i] = {
         code: codes[i], name: names[i], price: pack.px[i],
         chg: NaN, pe: pe == null ? NaN : pe, pb: NaN,
