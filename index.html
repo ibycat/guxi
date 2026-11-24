@@ -914,7 +914,9 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
         return r.json();
       })
       .then(function(pack){
-        if (!pack || !pack.rows || !pack.rows.length) throw new Error("snap_empty");
+        // v3 是列式格式，没有 rows 字段，行数要从 code 列切分统计
+        var n = pack ? (pack.rows ? pack.rows.length : String(pack.code || "").split("|").filter(Boolean).length) : 0;
+        if (!n) throw new Error("snap_empty");
         return pack;
       });
   }
