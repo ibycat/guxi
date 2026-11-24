@@ -1148,7 +1148,9 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   function tagHtml(flags){
     if (!flags.length) return '<span class="tag none">普通</span>';
     var out = "";
-    var limit = Math.min(flags.length, 2);
+    // 最多 3 个：高息股往往同时命中「周期高位 / 需核验 / 含2次年报」，
+    // 只显示 2 个会把最能解释「为什么这么高」的那条挤掉
+    var limit = Math.min(flags.length, 3);
     for (var i = 0; i < limit; i++){
       out += '<span class="tag ' + flags[i][0] + '">' + flags[i][1] + "</span>";
     }
