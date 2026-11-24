@@ -4,7 +4,8 @@
 
 const ALLOWED_HOSTS = new Set([
   "push2.eastmoney.com",
-  "datacenter-web.eastmoney.com"
+  "datacenter-web.eastmoney.com",
+  "datacenter.eastmoney.com"
 ]);
 
 const UA =
@@ -133,7 +134,9 @@ export async function onRequest(context) {
   // 客户端用 _=<timestamp> 防浏览器缓存，但它会让边缘缓存永远不命中，必须剔除
   target.searchParams.delete("_");
 
-  const isBonus = target.search.indexOf("RPT_SHAREBONUS_DET") >= 0;
+  const isBonus =
+    target.search.indexOf("RPT_SHAREBONUS_DET") >= 0 ||
+    target.search.indexOf("RPT_HKF10") >= 0;
   const ttl = isBonus ? TTL_BONUS : TTL_QUOTE;
   const key = target.toString();
   const cache = caches.default;
@@ -151,7 +154,7 @@ export async function onRequest(context) {
     const res = cacheable(upstream.body, ttl);
     context.waitUntil(cache.put(cacheKey, res.clone()));
 
-    // 行情列表共有 56 页，逐页串行回源要好几分钟；这里把后面几页一起拉进缓存
+    // 行情列表共有几十页，逐页串行回源要好几分钟；这里把后面几页一起拉进缓存
     if (!isBonus && target.pathname.indexOf("clist/get") >= 0) {
       const pn = Number(target.searchParams.get("pn") || 0);
       if (pn > 0) {
