@@ -172,7 +172,7 @@ tbody tr:hover{background:#FCFBF8;}
   }
 
   function load(){
-    fetch("/api/snap?f=fund&v=1", { cache: "no-store" })
+    fetch("/api/snap?f=fund&v=2", { cache: "no-store" })
       .then(function(r){
         if (!r.ok) throw new Error("snap_" + r.status);
         return r.json();
