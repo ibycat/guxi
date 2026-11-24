@@ -61,12 +61,16 @@ export async function onRequest(context) {
   }
   if (request.method !== "GET") return jsonError("method_not_allowed", 405);
 
-  const f = new URL(request.url).searchParams.get("f");
+  const u = new URL(request.url);
+  const f = u.searchParams.get("f");
   if (f !== "a" && f !== "hk") return jsonError("bad_f", 400);
 
+  // 客户端带版本号：快照格式一变就能整体失效旧缓存，不用等 5 分钟
+  const ver = u.searchParams.get("v") || "1";
+
   const cache = caches.default;
-  const freshKey = new Request("https://snap.internal/fresh/" + f);
-  const staleKey = new Request("https://snap.internal/stale/" + f);
+  const freshKey = new Request("https://snap.internal/fresh/" + f + "/" + ver);
+  const staleKey = new Request("https://snap.internal/stale/" + f + "/" + ver);
 
   const hit = await cache.match(freshKey);
   if (hit) return hit;
