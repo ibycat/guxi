@@ -8,7 +8,15 @@
 // 解析留在浏览器（V8 解析 JSON 非常快，10k 条约几十毫秒）。
 // 分页之间用 \n\n 分隔（东财返回的是压缩 JSON，正文不含换行），前端 split 即可。
 
-const QUOTE = "https://push2.eastmoney.com/api/qt/clist/get";
+// push2 会按出口 IP 限流甚至直接 502，镜像轮流试一遍能显著提高成功率
+const QUOTE_HOSTS = [
+  "push2.eastmoney.com",
+  "82.push2.eastmoney.com",
+  "1.push2.eastmoney.com",
+  "17.push2.eastmoney.com",
+  "push2delay.eastmoney.com"
+];
+let quoteHostCursor = 0;
 const DIV = "https://datacenter.eastmoney.com/securities/api/data/v1/get";
 
 const FS_GGT = "b:DLMK0146";
@@ -119,8 +127,8 @@ async function poolMap(items, limit, worker) {
   return out;
 }
 
-function quoteUrl(universe, page, pz) {
-  const u = new URL(QUOTE);
+function quoteUrl(universe, page, pz, host) {
+  const u = new URL("https://" + (host || QUOTE_HOSTS[0]) + "/api/qt/clist/get");
   u.searchParams.set("po", "1");
   u.searchParams.set("np", "1");
   u.searchParams.set("fltt", "2");
@@ -147,13 +155,29 @@ function divUrl(from, page) {
   return u.toString();
 }
 
+// 逐镜像尝试：任一域名成功就记住它，下次优先用
+async function fetchQuotePage(universe, page, pz) {
+  let last;
+  for (let i = 0; i < QUOTE_HOSTS.length; i++) {
+    const idx = (quoteHostCursor + i) % QUOTE_HOSTS.length;
+    try {
+      const text = await fetchText(quoteUrl(universe, page, pz, QUOTE_HOSTS[idx]), 1);
+      quoteHostCursor = idx;
+      return text;
+    } catch (e) {
+      last = e;
+    }
+  }
+  throw last || new Error("all_mirrors_failed");
+}
+
 async function handleQuote(url, ctx) {
   const universe = url.searchParams.get("u") === "all" ? "all" : "ggt";
   const pz = 100;
 
   let first;
   try {
-    first = await fetchText(quoteUrl(universe, 1, pz));
+    first = await fetchQuotePage(universe, 1, pz);
   } catch (e) {
     return fail("upstream_quote");
   }
@@ -171,9 +195,7 @@ async function handleQuote(url, ctx) {
 
   // push2 对单 IP 的并发连接很敏感：6 并发时除首页外基本全被挂住（实测 24s 拿不到数据）。
   // 这里压到 2 并发 + 3 次重试，仍未拿到的页再串行补一遍。
-  const tail = await poolMap(rest, QUOTE_CONCURRENCY, (p) =>
-    fetchText(quoteUrl(universe, p, pz), 3)
-  );
+  const tail = await poolMap(rest, QUOTE_CONCURRENCY, (p) => fetchQuotePage(universe, p, pz));
   const parts = [first];
   const missing = [];
   for (let i = 0; i < rest.length; i++) {
@@ -182,7 +204,7 @@ async function handleQuote(url, ctx) {
   }
   for (const p of missing) {
     try {
-      parts.push(await fetchText(quoteUrl(universe, p, pz), 2));
+      parts.push(await fetchQuotePage(universe, p, pz));
     } catch (e) {
       /* 放弃该页 */
     }

@@ -1,0 +1,46 @@
+name: snapshot
+
+on:
+  schedule:
+    # 每 30 分钟。GitHub 的定时任务可能延迟几分钟，对股息率榜单无影响
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 生成快照
+        env:
+          SNAPSHOT_DIR: out
+        run: node scripts/snapshot.mjs
+
+      - name: 检查产物
+        run: ls -lh out/
+
+      - name: 推送到 data 分支（单提交，force-push，不污染 main 历史）
+        run: |
+          set -e
+          cd out
+          git init -q -b data
+          git config user.name "guxi-snapshot-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A
+          git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

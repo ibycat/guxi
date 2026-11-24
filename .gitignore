@@ -8,3 +8,6 @@ push.bat
 measure_hk.py
 hk1.json
 _check.js
+_push.py
+data/
+out/

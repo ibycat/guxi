@@ -890,9 +890,100 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     return rows;
   }
 
+  /* ---------------- 预生成快照 ----------------
+     由 GitHub Actions 每 30 分钟生成，推到独立的 data 分支，
+     页面用 raw.githubusercontent 直读（全球 CDN + gzip），不再实时打东财。
+     这样做同时解决两件事：首屏速度、以及东财对 Cloudflare 出口 IP 的封禁。
+     快照拿不到时自动回退到实时接口。 */
+  var SNAP_BASE = "https://raw.githubusercontent.com/ibycat/guxi/data/";
+
+  function now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
+
+  function parseFlags(str){
+    return String(str || "").split("|").filter(Boolean).map(function(x){
+      var i = x.indexOf(":");
+      return [x.slice(0, i), x.slice(i + 1)];
+    });
+  }
+
+  function fetchSnapshot(name){
+    // 10 分钟粒度的 evict key：既能绕开中间层缓存，又不至于每请求都新 URL
+    var bust = "?t=" + Math.floor(Date.now() / 600000);
+    return fetch(SNAP_BASE + name + ".json" + bust, { cache: "no-store" })
+      .then(function(r){
+        if (!r.ok) throw new Error("snap_" + r.status);
+        return r.json();
+      })
+      .then(function(pack){
+        if (!pack || !pack.rows || !pack.rows.length) throw new Error("snap_empty");
+        return pack;
+      });
+  }
+
+  function hydrateA(pack){
+    return pack.rows.map(function(a){
+      return {
+        code: a[0], name: a[1], price: a[2],
+        chg: a[3], pe: a[4], pb: a[5], mcap: a[6], ind: a[7],
+        listDate: a[8] ? new Date(a[8]) : null,
+        ttm: a[9] / 1e6, last: a[10] / 1e6, avg3: a[11] / 1e6,
+        payout: a[12] < 0 ? null : a[12] / 1e4,
+        consec: a[13], years: a[14], ttmCnt: a[15],
+        flags: parseFlags(a[16]),
+        records: String(a[17] || "").split(";").filter(Boolean).map(function(x){
+          var p = x.split(",");
+          return { period: p[0], dps: Number(p[1]), ex: p[2], prog: p[3], eps: 0 };
+        })
+      };
+    });
+  }
+
+  function hydrateHK(pack){
+    return pack.rows.map(function(a){
+      return {
+        code: a[0], name: a[1], price: a[2],
+        chg: a[3], pe: a[4], pb: NaN, mcap: a[5], ind: a[6], listDate: null,
+        ttm: a[7] / 1e6, last: a[8] / 1e6, avg3: a[9] / 1e6,
+        payout: null, consec: a[10], years: a[11], ttmCnt: a[12],
+        flags: parseFlags(a[13]), hk: true,
+        records: String(a[14] || "").split(";").filter(Boolean).map(function(x){
+          var p = x.split(",");
+          return { year: Number(p[0]), dps: Number(p[1]), ex: p[2], ccy: p[3], type: p[4] };
+        })
+      };
+    });
+  }
+
   function loadHK(){
+    var t0 = now();
+    fails = 0;
+    setStatus("load", "加载中");
+    progress(true);
+    $("subline").textContent = "正在读取港股快照…";
+
+    return fetchSnapshot("hk").then(function(pack){
+      var rows = hydrateHK(pack);
+      S.rows = rows;
+      S.historyReady = true;
+      S.loadedAt = pack.ts || Date.now();
+      S.fromCache = false;
+      var ms = now() - t0;
+      progress(false);
+      setStatus("ok", "快照 " + stamp(S.loadedAt));
+      $("subline").textContent = (S.hkAll ? "全部港股 " : "港股通 ") + rows.length.toLocaleString() +
+        " 只 · 首屏 " + (ms / 1000).toFixed(2) + "s · 快照于 " + stamp(S.loadedAt) +
+        " · 点右上「刷新」拉实时";
+      $("hintTime").textContent = "快照 " + stamp(S.loadedAt);
+      renderAll();
+    }).catch(function(err){
+      console.warn("港股快照不可用，回退实时", err);
+      return loadHKLive();
+    });
+  }
+
+  function loadHKLive(){
     var from = ymd(new Date(TODAY.getFullYear() - HISTORY_YEARS, 0, 1));
-    var t0 = (window.performance && performance.now) ? performance.now() : Date.now();
+    var t0 = now();
     fails = 0;
     setStatus("load", "加载中");
     progress(true);
@@ -908,7 +999,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       S.historyReady = true;
       S.loadedAt = Date.now();
       S.fromCache = false;
-      var ms = ((window.performance && performance.now) ? performance.now() : Date.now()) - t0;
+      var ms = now() - t0;
       progress(false);
       setStatus("ok", "已更新 " + stamp(S.loadedAt));
       $("subline").textContent = (S.hkAll ? "全部港股 " : "港股通 ") + rows.length.toLocaleString() +
@@ -1204,6 +1295,36 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   function loadFull(){
     if (S.market === "hk") return loadHK();
+    return loadASnap().catch(function(err){
+      console.warn("A 股快照不可用，回退实时", err);
+      return loadALive();
+    });
+  }
+
+  function loadASnap(){
+    var t0 = now();
+    fails = 0;
+    setStatus("load", "加载中");
+    progress(true);
+    $("subline").textContent = "正在读取 A 股快照…";
+    return fetchSnapshot("a").then(function(pack){
+      var rows = hydrateA(pack);
+      S.rows = rows;
+      S.historyReady = true;
+      S.loadedAt = pack.ts || Date.now();
+      S.fromCache = false;
+      try { saveCache(); } catch (e) { /* 忽略 */ }
+      var ms = now() - t0;
+      progress(false);
+      setStatus("ok", "快照 " + stamp(S.loadedAt));
+      $("subline").textContent = "全市场 " + rows.length.toLocaleString() + " 只 · 首屏 " +
+        (ms / 1000).toFixed(2) + "s · 快照于 " + stamp(S.loadedAt) + " · 点右上「刷新」拉实时";
+      $("hintTime").textContent = "快照 " + stamp(S.loadedAt);
+      renderAll();
+    });
+  }
+
+  function loadALive(){
     var parts = buildPeriods();
     var quotePages = 0, bonusDone = 0;
     var quotes = null, recs = [];
@@ -1260,7 +1381,14 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   function refreshQuotes(){
     if (refreshing) return;
-    if (S.market === "hk"){ loadHK().catch(function(err){ progress(false); setStatus("err", "刷新失败"); console.warn(err); }); return; }
+    if (S.market === "hk"){
+      loadHKLive().catch(function(err){
+        progress(false);
+        setStatus("err", "实时失败");
+        console.warn(err);
+      });
+      return;
+    }
     refreshing = true;
     var btn = $("refreshBtn");
     btn.disabled = true;
