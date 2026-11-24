@@ -922,7 +922,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     // 10 分钟粒度的 evict key：绕开中间层缓存，又不至于每请求都新 URL
     var bust = Math.floor(Date.now() / 600000);
     // 同源代理优先（走 Cloudflare 边缘、国内快），失败再直连 GitHub raw
-    return getJson("/api/snap?f=" + name + "&t=" + bust)
+    return getJson("/api/snap?f=" + name + "&v=2&t=" + bust)
       .catch(function(err){
         console.warn("快照同源代理不可用，直连 raw", err);
         return getJson(SNAP_RAW + name + ".json?t=" + bust);
@@ -930,19 +930,21 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   }
 
   function hydrateA(pack){
+    var inds = pack.inds || [];
     return pack.rows.map(function(a){
+      var ym = a[8] || 0;
       return {
         code: a[0], name: a[1], price: a[2],
-        chg: a[3], pe: a[4], pb: a[5], mcap: a[6], ind: a[7],
-        listDate: a[8] ? new Date(a[8]) : null,
-        ttm: a[9] / 1e6, last: a[10] / 1e6, avg3: a[11] / 1e6,
+        chg: a[3], pe: a[4], pb: a[5],
+        mcap: (a[6] || 0) * 1e8,
+        ind: inds[a[7]] || "",
+        listDate: ym ? new Date(Math.floor(ym / 100), (ym % 100) - 1, 1) : null,
+        ttm: a[9] / 1e4, last: a[10] / 1e4, avg3: a[11] / 1e4,
         payout: a[12] < 0 ? null : a[12] / 1e4,
-        consec: a[13], years: a[14], ttmCnt: a[15],
-        flags: parseFlags(a[16]),
-        records: String(a[17] || "").split(";").filter(Boolean).map(function(x){
-          var p = x.split(",");
-          return { period: p[0], dps: Number(p[1]), ex: p[2], prog: p[3], eps: 0 };
-        })
+        consec: a[13], years: a[14], ttmCnt: 0,
+        flags: parseFlags(a[15]),
+        // 快照不再内嵌分红明细，展开时按需拉
+        records: []
       };
     });
   }
@@ -1127,7 +1129,68 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     $("industry").innerHTML = html;
   }
 
+  // 快照不再内嵌每股分红明细（那样 a.json 会到 1.4MB），改成展开时按只拉一次
+  var detailState = {};
+
+  function loadDetail(r){
+    if (detailState[r.code]) return;
+    detailState[r.code] = 1;
+    request(BONUS_API, {
+      reportName: "RPT_SHAREBONUS_DET",
+      columns: "SECURITY_CODE,PRETAX_BONUS_RMB,EX_DIVIDEND_DATE,EQUITY_RECORD_DATE,REPORT_DATE,ASSIGN_PROGRESS,BASIC_EPS",
+      filter: '(SECURITY_CODE="' + r.code + '")',
+      pageSize: 60,
+      pageNumber: 1,
+      source: "WEB",
+      client: "WEB",
+      sortColumns: "REPORT_DATE",
+      sortTypes: -1
+    }, "callback").then(function(j){
+      var data = (j && j.result && j.result.data) || [];
+      r.records = data.map(function(x){
+        var raw = Number(x.PRETAX_BONUS_RMB);
+        return {
+          period: String(x.REPORT_DATE || "").slice(0, 10),
+          dps: raw > 0 ? raw / 10 : 0,
+          ex: String(x.EX_DIVIDEND_DATE || x.EQUITY_RECORD_DATE || "").slice(0, 10),
+          eps: Number(x.BASIC_EPS) || 0,
+          prog: x.ASSIGN_PROGRESS || ""
+        };
+      }).filter(function(x){ return x.dps > 0; })
+        .sort(function(m, n){ return n.period.localeCompare(m.period); });
+      detailState[r.code] = 2;
+      renderTable();
+    }).catch(function(err){
+      detailState[r.code] = 3;
+      console.warn("分红明细加载失败", err);
+      renderTable();
+    });
+  }
+
+  function kvHtml(r){
+    return "<span>股息率 TTM</span><span class='num'>" + pct(r.ttm) + "</span>" +
+      "<span>上年年报</span><span class='num'>" + pct(r.last) + "</span>" +
+      "<span>近 3 年均值</span><span class='num'>" + pct(r.avg3) + "</span>" +
+      "<span>连续分红</span><span class='num'>" + (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") + "（近 " + HISTORY_YEARS + " 年 " + r.years + " 次）</span>" +
+      "<span>分红率</span><span class='num'>" + (r.payout == null ? "—" : pct(r.payout, 0)) + "</span>" +
+      "<span>总市值</span><span class='num'>" + fmtCap(r.mcap) + "</span>" +
+      "<span>PE / PB</span><span class='num'>" + (isFinite(r.pe) && r.pe !== 0 ? r.pe.toFixed(1) : "—") + " / " + (isFinite(r.pb) && r.pb !== 0 ? r.pb.toFixed(2) : "—") + "</span>" +
+      "<span>所属行业</span><span>" + (r.ind || "—") + "</span>" +
+      "<span>上市日期</span><span>" + (r.listDate ? (r.listDate.getFullYear() + "-" + String(r.listDate.getMonth() + 1).padStart(2, "0")) : "—") + "</span>";
+  }
+
   function detailHtml(r){
+    if (!r.hk && !r.records.length){
+      if (!detailState[r.code]) loadDetail(r);
+      var hint = detailState[r.code] === 3
+        ? "明细加载失败，稍后重试或点右上「刷新」"
+        : "正在加载分红明细…";
+      return '<tr class="detail"><td colspan="10"><div class="dbox">' +
+        "<div><h4>分红明细（每 10 股派息，税前）</h4>" +
+        "<div style='color:var(--ink3);font-size:11.5px;padding:8px 0'>" + hint + "</div></div>" +
+        "<div><h4>关键指标</h4><div class='kv'>" + kvHtml(r) + "</div></div></div></td></tr>";
+    }
+
     var recs = r.records.slice(0, 8);
     var rowsHtml = "";
     var title, head, empty;
@@ -1151,17 +1214,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     if (!rowsHtml) rowsHtml = empty;
     return '<tr class="detail"><td colspan="10"><div class="dbox">' +
       "<div><h4>" + title + "</h4><table class='dtable'><thead>" + head + "</thead><tbody>" + rowsHtml + "</tbody></table></div>" +
-      "<div><h4>关键指标</h4><div class='kv'>" +
-      "<span>股息率 TTM</span><span class='num'>" + pct(r.ttm) + "</span>" +
-      "<span>上年年报</span><span class='num'>" + pct(r.last) + "</span>" +
-      "<span>近 3 年均值</span><span class='num'>" + pct(r.avg3) + "</span>" +
-      "<span>连续分红</span><span class='num'>" + (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") + "（近 " + HISTORY_YEARS + " 年 " + r.years + " 次）</span>" +
-      "<span>分红率</span><span class='num'>" + (r.payout == null ? "—" : pct(r.payout, 0)) + "</span>" +
-      "<span>总市值</span><span class='num'>" + fmtCap(r.mcap) + "</span>" +
-      "<span>PE / PB</span><span class='num'>" + (isFinite(r.pe) && r.pe !== 0 ? r.pe.toFixed(1) : "—") + " / " + (isFinite(r.pb) && r.pb !== 0 ? r.pb.toFixed(2) : "—") + "</span>" +
-      "<span>所属行业</span><span>" + (r.ind || "—") + "</span>" +
-      "<span>上市日期</span><span>" + (r.listDate ? (r.listDate.getFullYear() + "-" + String(r.listDate.getMonth() + 1).padStart(2, "0")) : "—") + "</span>" +
-      "</div></div></div></td></tr>";
+      "<div><h4>关键指标</h4><div class='kv'>" + kvHtml(r) + "</div></div></div></td></tr>";
   }
 
   function syncSort(){
@@ -1413,11 +1466,18 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
         var r = S.rows[j];
         var q = map[r.code];
         if (q){
-          r.price = Number(q.f2) || r.price;
+          var oldP = r.price;
+          var newP = Number(q.f2) || r.price;
+          r.price = newP;
           r.chg = Number(q.f3);
           r.pe = Number(q.f9);
           r.pb = Number(q.f23);
           r.mcap = Number(q.f20);
+          // 快照行不带分红明细，用价格比例换算股息率（分红金额本身没变，按比例缩放是精确的）
+          if (!r.records.length && oldP > 0 && newP > 0 && oldP !== newP){
+            var k = oldP / newP;
+            r.ttm *= k; r.last *= k; r.avg3 *= k;
+          }
           n++;
         }
       }
