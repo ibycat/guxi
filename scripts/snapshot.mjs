@@ -122,14 +122,23 @@ async function pullClist(fsCode, fields, po) {
   const q = (pn) =>
     `${PATH_CLIST}?po=${po}&np=1&fltt=2&invt=2&fid=f12&fs=${fsCode}&fields=${fields}&pz=100&pn=${pn}`;
 
-  const first = await getRotating((h) => `https://${h}${q(1)}`);
+  let first = null;
+  for (let attempt = 0; attempt < 3 && !first; attempt++) {
+    if (attempt) await sleep(5000 * attempt);
+    try {
+      first = await getRotating((h) => `https://${h}${q(1)}`, 2);
+    } catch (e) {
+      console.log(`  首页获取失败（第 ${attempt + 1} 次）：${e && e.message}`);
+    }
+  }
+  if (!first) throw new Error("首页拉取失败");
   const total = JSON.parse(first).data.total || 0;
   const pages = Math.max(1, Math.ceil(total / 100));
   const texts = new Array(pages).fill(null);
   texts[0] = first;
 
   let idx = 1;
-  const CONC = 2;
+  const CONC = 1; // push2 对并发极其敏感，串行最稳
   async function worker() {
     while (true) {
       const i = idx++;
@@ -143,13 +152,14 @@ async function pullClist(fsCode, fields, po) {
   }
   await Promise.all(Array.from({ length: Math.min(CONC, pages - 1) }, () => worker()));
 
-  const missing = [];
-  for (let i = 1; i < pages; i++) if (!texts[i]) missing.push(i);
-  if (missing.length) {
-    console.log(`  缺 ${missing.length} 页，串行补拉…`);
+  for (let round = 1; round <= 2; round++) {
+    const missing = [];
+    for (let i = 1; i < pages; i++) if (!texts[i]) missing.push(i);
+    if (!missing.length) break;
+    console.log(`  第 ${round} 轮补拉：缺 ${missing.length} 页`);
     for (const i of missing) {
       try {
-        await sleep(250);
+        await sleep(400 * round);
         texts[i] = await getRotating((h) => `https://${h}${q(i + 1)}`, 3);
       } catch (e) {
         /* 放弃该页 */
@@ -222,9 +232,10 @@ async function buildA() {
   console.log("[A] 拉取行情…");
   const q = await pullClist(FS_A, FS_A_FIELDS, 0);
   console.log(`[A] 行情 ${q.okPages}/${q.pages} 页，${q.rows.length}/${q.total} 只`);
-  if (q.rows.length < q.total * 0.95) {
-    throw new Error(`行情不完整：${q.rows.length}/${q.total}`);
+  if (q.rows.length < q.total * 0.6) {
+    throw new Error(`行情严重缺失：${q.rows.length}/${q.total}`);
   }
+  const partialA = q.okPages < q.pages ? `${q.okPages}/${q.pages}` : "";
 
   console.log("[A] 拉取分红…");
   const recs = [];
@@ -326,7 +337,7 @@ async function buildA() {
     ]);
   }
   console.log(`[A] 计算完成 ${rows.length} 行`);
-  return { ts: Date.now(), market: "a", years: HISTORY_YEARS, rows };
+  return { ts: Date.now(), market: "a", years: HISTORY_YEARS, partial: partialA, rows };
 }
 
 /* ------------------------------ 港股 ------------------------------ */
@@ -378,9 +389,10 @@ async function buildHK() {
   console.log("[HK] 拉取港股通行情…");
   const q = await pullClist(FS_HK_GGT, FS_HK_FIELDS, 1);
   console.log(`[HK] 行情 ${q.okPages}/${q.pages} 页，${q.rows.length}/${q.total} 只`);
-  if (q.rows.length < q.total * 0.95) {
-    throw new Error(`行情不完整：${q.rows.length}/${q.total}`);
+  if (q.rows.length < q.total * 0.6) {
+    throw new Error(`行情严重缺失：${q.rows.length}/${q.total}`);
   }
+  const partialHK = q.okPages < q.pages ? `${q.okPages}/${q.pages}` : "";
 
   const from = ymd(new Date(TODAY.getFullYear() - HISTORY_YEARS, 0, 1));
   const divs = await fetchHKDiv(from);
@@ -454,7 +466,7 @@ async function buildHK() {
     ]);
   }
   console.log(`[HK] 计算完成 ${rows.length} 行`);
-  return { ts: Date.now(), market: "hk", years: HISTORY_YEARS, rows };
+  return { ts: Date.now(), market: "hk", years: HISTORY_YEARS, partial: partialHK, rows };
 }
 
 /* ------------------------------ 主流程 ------------------------------ */
@@ -471,7 +483,7 @@ async function main() {
 
   let okCount = 0;
   for (const [name, fn] of jobs) {
-    if (okCount > 0) await sleep(5000);
+    if (okCount > 0) await sleep(15000);
     try {
       const pack = await fn();
       const text = JSON.stringify(pack);
