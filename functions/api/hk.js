@@ -41,16 +41,29 @@ function fail(error, status) {
 }
 
 function bundle(parts, ttl) {
-  return new Response(parts.join("\n\n"), {
-    status: 200,
-    headers: Object.assign(
-      {
-        "content-type": "text/plain; charset=utf-8",
-        "cache-control": "public, max-age=" + ttl + ", s-maxage=" + ttl
-      },
-      CORS
-    )
-  });
+  const body = parts.join("\n\n");
+  const headers = Object.assign(
+    {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "public, max-age=" + ttl + ", s-maxage=" + ttl
+    },
+    CORS
+  );
+
+  // Workers 不会自动压缩函数响应，1.6MB 裸传在移动端很致命。
+  // CompressionStream 是流式的，CPU 开销可控（不像 JSON.parse 那样吃 CPU 配额）。
+  if (typeof CompressionStream === "function") {
+    try {
+      const gz = new Response(body).body.pipeThrough(new CompressionStream("gzip"));
+      headers["content-encoding"] = "gzip";
+      headers.vary = "accept-encoding";
+      return new Response(gz, { status: 200, headers });
+    } catch (e) {
+      /* 回退到明文 */
+    }
+  }
+
+  return new Response(body, { status: 200, headers });
 }
 
 async function fetchOnce(url) {
