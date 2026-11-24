@@ -276,7 +276,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     page: 1, size: 50,
     q: "", ind: "", ymin: 0, capmin: 0, exST: true, preset: "all",
     open: {},
-    loadedAt: null, fromCache: false
+    loadedAt: null, fromCache: false, historyReady: false
   };
 
   var $ = function(id){ return document.getElementById(id); };
@@ -488,12 +488,14 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
         if (d <= TODAY && d >= from) ttm.push(p);
       }
     }
-    var hist = [];
-    for (var k = 1; k <= HISTORY_YEARS; k++) hist.push((y - k) + "-12-31");
     var seen = {};
-    var all = [];
-    ttm.concat(hist).forEach(function(p){ if (!seen[p]) { seen[p] = 1; all.push(p); } });
-    return all;
+    ttm.forEach(function(p){ seen[p] = 1; });
+    var hist = [];
+    for (var k = 1; k <= HISTORY_YEARS; k++){
+      var hp = (y - k) + "-12-31";
+      if (!seen[hp]) hist.push(hp);
+    }
+    return { ttm: ttm, hist: hist };
   }
 
   function loadBonus(periods, onTick){
@@ -714,7 +716,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       '<div class="metric"><div class="k">有效样本</div><div class="v num">' + yv.length.toLocaleString() + '<small>只</small></div></div>' +
       '<div class="metric"><div class="k">全 A 中位数</div><div class="v num">' + pct(median) + '</div></div>' +
       '<div class="metric"><div class="k">股息率 ≥ 5%</div><div class="v num">' + cnt5 + '<small>只</small></div></div>' +
-      '<div class="metric"><div class="k">连续分红 ≥ 5 年</div><div class="v num">' + cnt5y + '<small>只</small></div></div>' +
+      '<div class="metric"><div class="k">连续分红 ≥ 5 年</div><div class="v num">' + (S.historyReady ? cnt5y + '<small>只</small>' : '<small style="color:var(--ink3)">计算中</small>') + '</div></div>' +
       '<div class="metric"><div class="k">待核验</div><div class="v num">' + cntCheck + '<small>只</small></div></div>';
   }
 
@@ -804,7 +806,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
           '<td class="r num">' + fmtPrice(r.price) + "</td>" +
           '<td class="r num ' + cls + '">' + chgTxt + "</td>" +
           '<td class="r"><span class="yield num">' + pct(yv) + "</span></td>" +
-          '<td class="r num">' + (r.consec ? (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") : "—") + "</td>" +
+          '<td class="r num">' + (S.historyReady ? (r.consec ? (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") : "—") : "<span style=\"color:var(--ink3)\">…</span>") + "</td>" +
           '<td class="r num">' + (r.payout == null ? "—" : pct(r.payout, 0)) + "</td>" +
           '<td class="r num">' + fmtCap(r.mcap) + "</td>" +
           '<td class="r num">' + (isFinite(r.pe) && r.pe !== 0 ? r.pe.toFixed(1) : "—") + "</td>" +
@@ -906,34 +908,59 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   }
 
   function loadFull(){
-    var periods = buildPeriods();
+    var parts = buildPeriods();
     var quotePages = 0, bonusDone = 0;
+    var quotes = null, recs = [];
     fails = 0;
     setStatus("load", "加载中");
     progress(true);
-    $("subline").textContent = "正在拉取全市场行情与近 " + HISTORY_YEARS + " 年分红记录…";
+    $("subline").textContent = "正在拉取全市场行情与近 12 个月分红…";
 
     var pQ = loadQuotes(function(d, t){
       quotePages = t;
-      $("subline").textContent = "行情 " + d + "/" + t + " 页 · 分红 " + bonusDone + "/" + periods.length + " 期";
+      $("subline").textContent = "行情 " + d + "/" + t + " 页 · 分红 " + bonusDone + "/" + parts.ttm.length + " 期";
     });
-    var pB = loadBonus(periods, function(d, t){
+    var pB = loadBonus(parts.ttm, function(d, t){
       bonusDone = d;
       $("subline").textContent = "行情 " + (quotePages || "—") + " 页 · 分红 " + d + "/" + t + " 期";
     });
 
     return Promise.all([pQ, pB]).then(function(res){
-      var rows = buildRows(res[0], res[1]);
+      quotes = res[0];
+      recs = res[1] || [];
+      var rows = buildRows(quotes, recs);
       if (!rows.length) throw new Error("数据为空");
       S.rows = rows;
       S.loadedAt = Date.now();
       S.fromCache = false;
-      saveCache();
+      S.historyReady = false;
       progress(false);
       setStatus("ok", "已更新 " + stamp(S.loadedAt));
-      $("subline").textContent = "全市场 " + rows.length.toLocaleString() + " 只 · 数据源 东方财富 · 每 5 分钟自动刷新" + (fails ? " · " + fails + " 个分页加载失败" : "");
+      $("subline").textContent = "全市场 " + rows.length.toLocaleString() + " 只 · 分红历史补齐中…" + (fails ? " · " + fails + " 个分页失败" : "");
       $("hintTime").textContent = "更新于 " + stamp(S.loadedAt);
       renderAll();
+
+      if (!parts.hist.length){ S.historyReady = true; saveCache(); renderAll(); return null; }
+      progress(true);
+      return loadBonus(parts.hist, function(d, t){
+        $("subline").textContent = "分红历史 " + d + "/" + t + " 期 · 连分年数补齐中…";
+      }).then(function(hist){
+        if (hist && hist.length){
+          for (var i = 0; i < hist.length; i++) recs.push(hist[i]);
+          S.rows = buildRows(quotes, recs);
+        }
+        S.historyReady = true;
+        saveCache();
+        progress(false);
+        $("subline").textContent = "全市场 " + S.rows.length.toLocaleString() + " 只 · 数据源 东方财富 · 每 5 分钟自动刷新" + (fails ? " · " + fails + " 个分页失败" : "");
+        renderAll();
+      }).catch(function(err){
+        S.historyReady = true;
+        progress(false);
+        $("subline").textContent = "全市场 " + S.rows.length.toLocaleString() + " 只 · 分红历史未补全，连分年数可能偏低";
+        renderAll();
+        console.warn(err);
+      });
     });
   }
 
@@ -1097,6 +1124,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       S.rows = cached.rows;
       S.loadedAt = cached.ts;
       S.fromCache = true;
+      S.historyReady = true;
       S.byCode = {};
       setStatus("ok", "缓存 " + stamp(cached.ts));
       $("subline").textContent = "已载入本地缓存，正在后台更新…";
