@@ -3,6 +3,8 @@
 一个纯前端 + 一个边缘代理函数的 A 股股息率排行榜，部署在 Cloudflare Pages 上。
 打开即用，无需数据库、无需构建、无第三方框架。
 
+**线上地址：https://guxi-6em.pages.dev**
+
 ## 功能
 
 - 全市场约 5,500 只 A 股实时股息率排行，红涨绿跌
@@ -17,43 +19,49 @@
 ## 架构
 
 ```
-浏览器 ──► /api/em?u=...  (Pages Function, 边缘缓存 60s) ──► 东方财富公开接口
+浏览器 ──► /api/em?u=...  (Pages Function, 分级缓存 + 分页预热) ──► 东方财富公开接口
    │
    └─ 若函数不可用（静态托管 / 本地 file:// 打开）→ 自动回退 JSONP 直连
 ```
 
 - `index.html`：单文件应用（内联 CSS / JS），只依赖同源 `/api/em`
-- `functions/api/em.js`：同源代理，白名单限制为 `push2.eastmoney.com` 与 `datacenter-web.eastmoney.com`，剔除 JSONP 回调参数后返回标准 JSON，并用 `caches.default` 做 60 秒边缘缓存
+- `functions/api/em.js`：同源代理
+  - 域名白名单：`push2.eastmoney.com`、`datacenter-web.eastmoney.com`
+  - 剔除 JSONP 回调参数与 `_` 时间戳（否则边缘缓存永不命中）
+  - 行情缓存 60s、分红缓存 12h
+  - 命中冷缓存时用 `waitUntil` 后台预热后续 8 页，避免 56 页逐页回源
+  - 429 / 5xx 自动退避重试，上游返回 HTML 验证页时判定为失败
 
-这样做的原因：东方财富接口不返回 CORS 头，直连只能靠 JSONP（无法缓存、易被拦截）；走自己的域后既能缓存，也不怕浏览器拦截第三方脚本。
+加代理的原因：东方财富接口不返回 CORS 头，直连只能靠 JSONP（无法缓存、易被拦截）；走自己的域后既能缓存，也不怕浏览器拦截第三方脚本。
+
+> 注意：仓库里**不要放 `package.json`**。Pages 一旦检测到 `wrangler` 依赖，会自动改用 `wrangler deploy`（Worker 模式）并报 `Missing entry-point`。本项目走纯静态上传 + `functions/` 自动挂载。
 
 ## 部署
 
-### 方式一：CLI（最快）
+### Dashboard（当前使用的方式）
 
-```bash
-npm i -g wrangler
-wrangler login
-wrangler pages deploy . --project-name guxi
-```
-
-### 方式二：连接 Git 仓库
-
-Cloudflare Dashboard → Workers & Pages → Create → Pages → Connect to Git → 选择本仓库：
+Workers & Pages → 创建 → Pages → 连接 GitHub → 选本仓库：
 
 | 配置项 | 值 |
 | --- | --- |
-| Framework preset | None |
-| Build command | 留空 |
-| Build output directory | `.` |
+| 项目名称 | `guxi` |
+| 生产分支 | `main` |
+| 框架预设 | 无 |
+| 构建命令 | 留空 |
+| 构建输出目录 | `.` |
 
-`functions/` 会被自动识别为 Pages Functions，无需额外配置。
+`functions/` 会被自动识别为 Pages Functions。
+
+### CLI
+
+```bash
+npx wrangler pages deploy . --project-name guxi
+```
 
 ### 本地开发
 
 ```bash
-npm i
-npm run dev      # wrangler pages dev . --port 8788
+npx wrangler pages dev . --port 8788
 ```
 
 不装 wrangler 也能用：直接双击 `index.html`，会自动回退到 JSONP 直连模式。
@@ -73,6 +81,11 @@ npm run dev      # wrangler pages dev . --port 8788
 - **只算现金分红**，送转股不计入股息率
 - 榜首常见 10%+ 多为一次性特别分红或两次年报挤进同一窗口，已用 `含 2 次年报`、`需核验` 标记
 - 周期行业（煤炭、航运、化工等）盈利顶部股息率虚高，次年易腰斩，标记为 `周期高位`
+
+## 已知限制
+
+- 东方财富 `push2` 列表接口单页上限 100 条，全市场需 56 次分页请求；`datacenter` 分红接口单页上限 500 条
+- 首次冷缓存仍需拉取全量分页，之后 12 小时内命中边缘缓存
 
 ## 免责声明
 
