@@ -10,6 +10,11 @@ on:
     # 50 8 UTC = 16:50 北京时间
     - cron: "50 8 * * *"
   workflow_dispatch:
+  # 改了抓取脚本就立刻跑一次验证，省得等定时任务
+  push:
+    paths:
+      - "scripts/fund.mjs"
+      - ".github/workflows/fund.yml"
 
 permissions:
   contents: write
