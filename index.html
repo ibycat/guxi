@@ -202,8 +202,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
           <input id="q" placeholder="搜索名称 / 代码" autocomplete="off">
         </div>
         <div class="presets" id="presets">
-          <button class="on" data-preset="all">全部</button>
-          <button data-preset="steady">稳健高息</button>
+          <button data-preset="all">全部</button>
+          <button class="on" data-preset="steady">稳健高息</button>
           <button data-preset="cycle">周期高息</button>
           <button data-preset="check">待核验</button>
         </div>
@@ -300,7 +300,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     tab: "ttm",
     sortKey: "y", sortDir: -1,
     page: 1, size: 50,
-    q: "", ind: "", ymin: 0, capmin: 0, exST: true, preset: "all",
+    q: "", ind: "", ymin: 0, capmin: 0, exST: true, preset: "steady",
     open: {},
     loadedAt: null, fromCache: false, historyReady: false
   };
@@ -1318,7 +1318,10 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     var slice = list.slice(start, start + S.size);
 
     if (!total){
-      $("tbody").innerHTML = '<tr><td colspan="11"><div class="skel">没有符合条件的标的，试着放宽筛选</div></td></tr>';
+      var tip = S.preset === "steady"
+        ? "当前口径下没有符合「稳健高息」的标的（要求股息率 ≥ 4%、连续分红 ≥ 4 年、分红率 ≤ 80%）。<br>可以点「全部」，或切回 TTM 口径再看。"
+        : "没有符合条件的标的，试着放宽筛选";
+      $("tbody").innerHTML = '<tr><td colspan="11"><div class="skel">' + tip + "</div></td></tr>";
     } else {
       var html = "";
       for (var i = 0; i < slice.length; i++){
@@ -1670,11 +1673,11 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       S.rows = [];
       S.page = 1;
       S.ind = "";
-      S.preset = "all";
+      S.preset = "steady";
       S.open = {};
       $("ind").innerHTML = '<option value="">全部行业</option>';
       document.querySelectorAll("#presets button").forEach(function(o){ o.classList.remove("on"); });
-      document.querySelector('#presets button[data-preset="all"]').classList.add("on");
+      document.querySelector('#presets button[data-preset="steady"]').classList.add("on");
       $("hkAllWrap").style.display = (mk === "hk") ? "inline-flex" : "none";
       $("hintFilter").textContent = (mk === "hk") ? "仙股" : (S.exST ? "ST / " : "") + "次新";
       $("mkTip").textContent = (mk === "hk") ? "仅港币现金派息计入股息率；美元/人民币派息单列标记" : "";
