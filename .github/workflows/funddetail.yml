@@ -25,8 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 50
     env:
-      # 首次先 200 只验证解析，确认后改成 12000
-      DETAIL_LIMIT: "200"
+      DETAIL_LIMIT: "12000"
     steps:
       - uses: actions/checkout@v4
         with:
