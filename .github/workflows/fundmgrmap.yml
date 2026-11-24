@@ -1,0 +1,79 @@
+name: fundmgrmap
+
+# 经理「姓名 → id」映射（用 /fundSearch?m=7 反查）。
+# 建好之后 fundmgr 就不再依赖 fundmeta，fundmeta 可以下线。
+
+on:
+  schedule:
+    # 每天 02:40 UTC（北京 10:40），排在 funddetail 之后
+    - cron: "40 2 * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/fundmgrmap.mjs"
+      - ".github/workflows/fundmgrmap.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-branch-writer
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MAP_LIMIT: "4000"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 取出已有的 data 分支产物
+        run: |
+          mkdir -p out
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git fetch --depth=1 origin data
+            for f in a.json hk.json fund.json fundmeta.json fundrank.json funddetail.json mgrmap.json managers.json fundmgr.json fundapi_probe.json; do
+              git show "FETCH_HEAD:$f" > "out/$f" 2>/dev/null || rm -f "out/$f"
+            done
+            echo "已带回：$(ls -1 out | tr '\n' ' ')"
+          fi
+
+      - name: 反查经理 id
+        env:
+          SNAPSHOT_DIR: out
+        run: node scripts/fundmgrmap.mjs --limit "$MAP_LIMIT"
+
+      - name: 校验产物
+        run: |
+          set -e
+          node -e "
+            const d=require('./out/mgrmap.json');
+            const rows=(d.rows||[]).filter(r=>r.id);
+            if(!rows.length){console.error('一条映射都没命中');process.exit(1)}
+            const exact=rows.filter(r=>r.exact).length;
+            const dup=rows.filter(r=>r.dup>1).length;
+            console.log('映射', d.count, '/', d.totalNames, '| 精确', exact, '| 同名多人', dup);
+            if(rows.length/Math.max(d.totalNames,1) < 0.5){console.error('命中率过低');process.exit(1)}
+          "
+
+      - name: 推送 data 分支
+        run: |
+          set -e
+          cd out
+          git init -q -b data
+          git config user.name "guxi-snapshot-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A
+          git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
+          echo "pushed $(ls -1 | tr '\n' ' ')"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
