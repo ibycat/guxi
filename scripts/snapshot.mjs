@@ -48,6 +48,11 @@ const FS_A_FIELDS = "f2,f3,f9,f12,f14,f20,f23,f26,f100";
 const FS_HK_GGT = "b:DLMK0146";
 const FS_HK_FIELDS = "f2,f3,f9,f12,f14,f20,f100";
 
+// 港股派息币种很杂：实测 665 只港股通里，265 只只用人民币派息、28 只只用美元。
+// 只算港币会把近一半标的判成「无分红」，所以在原始记录上折算成港币再计算。
+// 代码固定汇率，仅用于横向比较，不构成汇率报价。
+const CCY_RATE = { "港币": 1, "人民币": 1.08, "美元": 7.78, "新加坡元": 5.8, "澳元": 5.1 };
+
 const CYCLE = new Set([
   "煤炭开采", "航运港口", "炼化及贸易", "化学制品", "化学原料", "钢铁",
   "工业金属", "小金属", "贵金属", "证券", "房地产开发", "水泥", "玻璃玻纤",
@@ -423,10 +428,13 @@ async function buildHK() {
     let ttmSum = 0, ttmCnt = 0, nonHkd = 0;
     const byYear = new Map();
     for (const x of rr) {
-      if (x.ccy !== "港币") { nonHkd++; continue; }
+      const rate = CCY_RATE[x.ccy];
+      if (!rate) { nonHkd++; continue; }
+      if (x.ccy !== "港币") nonHkd++;
+      const hkd = x.dps * rate;
       const d = x.ex ? new Date(x.ex + "T00:00:00") : null;
-      if (d && !isNaN(d) && d >= winFrom && d <= TODAY) { ttmSum += x.dps; ttmCnt++; }
-      if (x.year) byYear.set(x.year, (byYear.get(x.year) || 0) + x.dps);
+      if (d && !isNaN(d) && d >= winFrom && d <= TODAY) { ttmSum += hkd; ttmCnt++; }
+      if (x.year) byYear.set(x.year, (byYear.get(x.year) || 0) + hkd);
     }
     const ttm = ttmSum / price;
 
@@ -449,7 +457,7 @@ async function buildHK() {
 
     const flags = [];
     if (ttm <= 0) flags.push("n:无分红");
-    if (nonHkd > 0) flags.push("i:非港币派息");
+    if (nonHkd > 0) flags.push("i:含非港币(已折算)");
     if (ttm > 0 && consec <= 1) flags.push("w:分红不连续");
     if (ttm > 0.1) flags.push("b:需核验");
     if (price < 1) flags.push("w:低价股");
