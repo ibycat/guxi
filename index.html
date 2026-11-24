@@ -895,7 +895,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
      页面用 raw.githubusercontent 直读（全球 CDN + gzip），不再实时打东财。
      这样做同时解决两件事：首屏速度、以及东财对 Cloudflare 出口 IP 的封禁。
      快照拿不到时自动回退到实时接口。 */
-  var SNAP_BASE = "https://raw.githubusercontent.com/ibycat/guxi/data/";
+  var SNAP_RAW = "https://raw.githubusercontent.com/ibycat/guxi/data/";
 
   function now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
 
@@ -906,10 +906,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     });
   }
 
-  function fetchSnapshot(name){
-    // 10 分钟粒度的 evict key：既能绕开中间层缓存，又不至于每请求都新 URL
-    var bust = "?t=" + Math.floor(Date.now() / 600000);
-    return fetch(SNAP_BASE + name + ".json" + bust, { cache: "no-store" })
+  function getJson(url){
+    return fetch(url, { cache: "no-store" })
       .then(function(r){
         if (!r.ok) throw new Error("snap_" + r.status);
         return r.json();
@@ -917,6 +915,17 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       .then(function(pack){
         if (!pack || !pack.rows || !pack.rows.length) throw new Error("snap_empty");
         return pack;
+      });
+  }
+
+  function fetchSnapshot(name){
+    // 10 分钟粒度的 evict key：绕开中间层缓存，又不至于每请求都新 URL
+    var bust = Math.floor(Date.now() / 600000);
+    // 同源代理优先（走 Cloudflare 边缘、国内快），失败再直连 GitHub raw
+    return getJson("/api/snap?f=" + name + "&t=" + bust)
+      .catch(function(err){
+        console.warn("快照同源代理不可用，直连 raw", err);
+        return getJson(SNAP_RAW + name + ".json?t=" + bust);
       });
   }
 

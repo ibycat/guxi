@@ -464,12 +464,14 @@ async function main() {
   fs.mkdirSync(outDir, { recursive: true });
 
   const only = process.argv[2];
+  // 港股放前面：它请求量小，先拿下；A 股 56 页跑完后同一个出口 IP 容易被限流
   const jobs = [];
-  if (!only || only === "a") jobs.push(["a", buildA]);
   if (!only || only === "hk") jobs.push(["hk", buildHK]);
+  if (!only || only === "a") jobs.push(["a", buildA]);
 
   let okCount = 0;
   for (const [name, fn] of jobs) {
+    if (okCount > 0) await sleep(5000);
     try {
       const pack = await fn();
       const text = JSON.stringify(pack);
