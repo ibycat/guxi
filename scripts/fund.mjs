@@ -77,6 +77,16 @@ async function fetchRank(dt, ft, pi, pn, tries = 3) {
   throw new Error("rank_fetch_failed:" + last);
 }
 
+// 手续费不是固定下标：不同品种（开放式/货币）尾部列数不一样，
+// 而且我们传了 sd/ed，多出一列「自定义区间涨幅」（形如 116.0567）。
+// 实测 f[18] 拿到的是那个涨幅，不是费率。费率一定带 % 后缀，所以从尾部往回找。
+function pickFee(f) {
+  for (let i = f.length - 1; i >= 5; i--) {
+    if (/%$/.test(f[i])) return f[i];
+  }
+  return "";
+}
+
 // 开放式基金行：19 个字段
 // 0 代码 1 简称 2 拼音 3 净值日期 4 单位净值 5 累计净值 6 日增长率
 // 7 近1周 8 近1月 9 近3月 10 近6月 11 近1年 12 近2年 13 近3年
@@ -109,7 +119,7 @@ function parseOpen(line) {
     ytd: num(14),
     since: num(15),
     est: f[16] || "",
-    fee: f.length > 18 ? f[18] : ""
+    fee: pickFee(f)
   };
 }
 
@@ -132,7 +142,7 @@ function parseMoney(line) {
     d: f[2] || "",
     wf: num(3),
     y7: num(4),
-    fee: f[f.length - 1] || ""
+    fee: pickFee(f)
   };
 }
 
