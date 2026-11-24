@@ -44,9 +44,9 @@ const NOW = new Date();
 const TODAY = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
 
 const FS_A = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23";
-const FS_A_FIELDS = "f2,f18,f9,f12,f14,f20,f26,f100,f124";
+const FS_A_FIELDS = "f2,f3,f18,f9,f12,f14,f20,f23,f26,f100,f124";
 const FS_HK_GGT = "b:DLMK0146";
-const FS_HK_FIELDS = "f2,f18,f9,f12,f14,f20,f23,f100,f124";
+const FS_HK_FIELDS = "f2,f3,f18,f9,f12,f14,f20,f23,f100,f124";
 
 // 港股派息币种很杂：实测 665 只港股通里，265 只只用人民币派息、28 只只用美元。
 // 只算港币会把近一半标的判成「无分红」，所以在原始记录上折算成港币再计算。
