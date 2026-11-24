@@ -241,15 +241,25 @@ async function buildA() {
   const merged = [];
   let totalSum = 0, pagesSum = 0, okPagesSum = 0;
   for (const fsCode of FS_PARTS) {
+    let part = null;
+    for (const po of [0, 1]) {   // 升序被拒就换降序，参数组合不同有时能绕开
+      try {
+        part = await pullClist(fsCode, FS_A_FIELDS, po);
+        break;
+      } catch (e) {
+        console.log(`  ${fsCode}(po=${po}): 失败 ${e && e.message}`);
+      }
+      await sleep(1200);
+    }
+    if (!part) continue;
     try {
-      const part = await pullClist(fsCode, FS_A_FIELDS, 0);
       merged.push(...part.rows);
       totalSum += part.total;
       pagesSum += part.pages;
       okPagesSum += part.okPages;
       console.log(`  ${fsCode}: ${part.rows.length}/${part.total}`);
     } catch (e) {
-      console.log(`  ${fsCode}: 失败 ${e && e.message}`);
+      console.log(`  ${fsCode}: 合并失败 ${e && e.message}`);
     }
     await sleep(1500);
   }
@@ -561,7 +571,10 @@ async function main() {
       const pack = await fn();
       const text = JSON.stringify(pack);
       fs.writeFileSync(path.join(outDir, name + ".json"), text);
-      console.log(`OK ${name}.json  ${(text.length / 1024).toFixed(0)}KB  ${pack.rows.length} 行`);
+      const n = pack.rows
+        ? pack.rows.length
+        : String(pack.code || "").split("|").filter(Boolean).length;
+      console.log(`OK ${name}.json  ${(text.length / 1024).toFixed(0)}KB  ${n} 行`);
       okCount++;
     } catch (e) {
       // 单个市场失败不影响另一个；旧文件由工作流从上一次产物恢复
