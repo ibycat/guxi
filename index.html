@@ -283,6 +283,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   var FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23";
   var FIELDS = "f2,f3,f5,f6,f8,f9,f12,f13,f14,f20,f21,f23,f26,f100";
   var HISTORY_YEARS = 6;
+  var HK_BUNDLE_V = 2; // 改动港股聚合接口响应格式时递增，可整体失效边缘缓存
   var CACHE_KEY = "asdiv_cache_v3";
   var CACHE_TTL = 12 * 3600 * 1000;
 
@@ -712,7 +713,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       var p = Number(it.f2);
       return isHKCode(it.f12) && isFinite(p) && p > 0;
     }
-    return fetchBundle("mode=quote&u=" + (S.hkAll ? "all" : "ggt"))
+    return fetchBundle("mode=quote&u=" + (S.hkAll ? "all" : "ggt") + "&v=" + HK_BUNDLE_V)
       .then(function(pages){
         var rows = [];
         for (var i = 0; i < pages.length; i++){
@@ -769,7 +770,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   }
 
   function loadHKDiv(fromDate){
-    return fetchBundle("mode=div&from=" + encodeURIComponent(fromDate))
+    return fetchBundle("mode=div&from=" + encodeURIComponent(fromDate) + "&v=" + HK_BUNDLE_V)
       .then(function(pages){
         var out = [];
         for (var i = 0; i < pages.length; i++){
