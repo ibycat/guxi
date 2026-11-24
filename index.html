@@ -133,6 +133,7 @@ tr.detail td{background:#FCFBF8; border-bottom:1px solid var(--line); padding:0;
 
 .error{margin:14px; padding:14px; border:1px solid #EBD3D0; background:#FDF6F5; border-radius:8px; color:#8C3A32; font-size:12.5px; line-height:1.7;}
 .skel{height:210px; display:flex; align-items:center; justify-content:center; color:var(--ink3); font-size:12.5px; gap:8px;}
+.stale{margin:12px 0 0; padding:9px 12px; border:1px solid #E3CC9C; background:var(--warn-bg); color:var(--warn-ink); border-radius:8px; font-size:12px; line-height:1.6;}
 
 footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; color:var(--ink3); line-height:1.8;}
 
@@ -175,6 +176,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     <div class="metric"><div class="k">连续分红 ≥ 5 年</div><div class="v num">—</div></div>
     <div class="metric"><div class="k">待核验</div><div class="v num">—</div></div>
   </section>
+
+  <div class="stale" id="staleBar" style="display:none"></div>
 
   <div class="layout">
     <section class="panel">
@@ -900,6 +903,23 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   function now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
 
+  // 快照超过 3 天没更新说明上游抓取一直失败，页面必须显式提醒，
+  // 否则用户会拿一份过期数据当今天的行情看。
+  function checkStale(asof){
+    var el = $("staleBar");
+    if (!el) return;
+    if (!asof){ el.style.display = "none"; return; }
+    var d = new Date(asof + "T00:00:00");
+    if (isNaN(d)) { el.style.display = "none"; return; }
+    var days = Math.round((TODAY - d) / (24 * 3600 * 1000));
+    if (days >= 3){
+      el.textContent = "⚠ 数据已 " + days + " 天未更新（最近一份快照是 " + asof + "）。上游抓取可能持续失败，页面上的价格与股息率仅供参照。";
+      el.style.display = "block";
+    } else {
+      el.style.display = "none";
+    }
+  }
+
   // 标记的严重度必须落在 good/warn/bad/info/none 这五个 CSS 类上，否则标签没有底色。
   // 早期快照里用过单字母缩写（g/w/b/i/n），这里做一次归一，保证旧数据也能正常上色。
   var FLAG_CODE = {
@@ -1061,41 +1081,12 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       $("subline").textContent = (S.hkAll ? "全部港股 " : "港股通 ") + rows.length.toLocaleString() +
         " 只 · 首屏 " + (ms / 1000).toFixed(2) + "s · 收盘 " + (pack.asof || "—") +
         (pack.partial ? " · 部分分页未取到（" + pack.partial + "）" : "");
+      checkStale(pack.asof);
       $("hintTime").textContent = "快照 " + stamp(S.loadedAt);
       renderAll();
     }).catch(function(err){
       console.warn("港股快照不可用", err);
       showSnapError(err);
-    });
-  }
-
-  function loadHKLive(){
-    var from = ymd(new Date(TODAY.getFullYear() - HISTORY_YEARS, 0, 1));
-    var t0 = now();
-    fails = 0;
-    setStatus("load", "加载中");
-    progress(true);
-    $("subline").textContent = "正在拉取" + (S.hkAll ? "全部港股" : "港股通") + "行情与派息记录…";
-
-    return Promise.all([
-      loadHKQuotes(),
-      loadHKDiv(from)
-    ]).then(function(res){
-      var rows = buildRowsHK(res[0], res[1]);
-      if (!rows.length) throw new Error("数据为空");
-      S.rows = rows;
-      S.historyReady = true;
-      S.loadedAt = Date.now();
-      S.fromCache = false;
-      var ms = now() - t0;
-      progress(false);
-      setStatus("ok", "已更新 " + stamp(S.loadedAt));
-      $("subline").textContent = (S.hkAll ? "全部港股 " : "港股通 ") + rows.length.toLocaleString() +
-        " 只 · 港元计价 · 首屏 " + (ms / 1000).toFixed(2) + "s" +
-        " · 派息 " + res[1].length.toLocaleString() + " 条" +
-        " · 每 5 分钟自动刷新" + (fails ? " · " + fails + " 个分页失败" : "");
-      $("hintTime").textContent = "更新于 " + stamp(S.loadedAt);
-      renderAll();
     });
   }
 
@@ -1472,63 +1463,9 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       $("subline").textContent = "全市场 " + rows.length.toLocaleString() + " 只 · 首屏 " +
         (ms / 1000).toFixed(2) + "s · 收盘 " + (pack.asof || "—") +
         (pack.partial ? " · 部分分页未取到（" + pack.partial + "）" : "");
+      checkStale(pack.asof);
       $("hintTime").textContent = "快照 " + stamp(S.loadedAt);
       renderAll();
-    });
-  }
-
-  function loadALive(){
-    var parts = buildPeriods();
-    var quotePages = 0, bonusDone = 0;
-    var quotes = null, recs = [];
-    fails = 0;
-    setStatus("load", "加载中");
-    progress(true);
-    $("subline").textContent = "正在拉取全市场行情与近 12 个月分红…";
-
-    var pQ = loadQuotes(function(d, t){
-      quotePages = t;
-      $("subline").textContent = "行情 " + d + "/" + t + " 页 · 分红 " + bonusDone + "/" + parts.ttm.length + " 期";
-    });
-    var pB = loadBonus(parts.ttm, function(d, t){
-      bonusDone = d;
-      $("subline").textContent = "行情 " + (quotePages || "—") + " 页 · 分红 " + d + "/" + t + " 期";
-    });
-
-    return Promise.all([pQ, pB]).then(function(res){
-      quotes = res[0];
-      recs = res[1] || [];
-      var rows = buildRows(quotes, recs);
-      if (!rows.length) throw new Error("数据为空");
-      S.rows = rows;
-      S.loadedAt = Date.now();
-      S.fromCache = false;
-      S.historyReady = false;
-      progress(false);
-      setStatus("ok", "已更新 " + stamp(S.loadedAt));
-      $("subline").textContent = "全市场 " + rows.length.toLocaleString() + " 只 · 分红历史补齐中…" + (fails ? " · " + fails + " 个分页失败" : "");
-      $("hintTime").textContent = "更新于 " + stamp(S.loadedAt);
-      renderAll();
-
-      if (!parts.hist.length) { S.historyReady = true; saveCache(); renderAll(); return null; }
-      progress(true);
-      return loadBonus(parts.hist, function(d, t){
-        $("subline").textContent = "分红历史 " + d + "/" + t + " 期 · 连分年数补齐中…";
-      }).then(function(hist){
-        if (hist && hist.length){
-          for (var i = 0; i < hist.length; i++) recs.push(hist[i]);
-          S.rows = buildRows(quotes, recs);
-        }
-        S.historyReady = true;
-        saveCache();
-        progress(false);
-        $("subline").textContent = "全市场 " + S.rows.length.toLocaleString() + " 只 · 数据源 东方财富 · 收盘 " + (pack.asof || "—");
-        renderAll();
-      }).catch(function(err){
-        progress(false);
-        $("subline").textContent = "全市场 " + S.rows.length.toLocaleString() + " 只 · 分红历史未补全，连分年数可能偏低";
-        console.warn(err);
-      });
     });
   }
 
