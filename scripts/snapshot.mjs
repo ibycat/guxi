@@ -387,6 +387,9 @@ async function buildA() {
     if (ttm > 0.08 && CYCLE.has(ind)) flags.push("warn:周期高位");
     if (ttm > 0.1) flags.push("bad:需核验");
     if (annualInWin >= 2) flags.push("info:含2次年报");
+    // 一年派三次以上通常是特别分红/资产处置，不可持续，必须显式标出来
+    // （典型例子：荣晟环保一年三笔合计 2.08 元/股，股息率被顶到 19.5%）
+    if (ttmCnt >= 3) flags.push("info:一年3笔以上");
     if (ttm >= 0.03 && consec >= 5 && payout != null && payout >= 0.2 && payout <= 0.75)
       flags.push("good:稳健");
 
