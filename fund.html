@@ -33,6 +33,8 @@ header{position:sticky; top:0; z-index:20; background:rgba(246,246,243,.94); bac
 .toolbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:12px 14px; border-bottom:1px solid var(--line2);}
 .toolbar input[type="search"]{width:190px; padding:6px 9px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink);}
 .toolbar select{padding:6px 8px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink);}
+.toolbar input[type="date"]{padding:5px 7px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink);}
+.rangebox{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink3);}
 .panel{background:var(--panel); border:1px solid var(--line); border-radius:var(--r); margin-top:14px; overflow:hidden;}
 .tblwrap{overflow-x:auto;}
 table{width:100%; border-collapse:collapse; font-size:12.5px;}
@@ -105,6 +107,13 @@ tbody tr:hover{background:#FCFBF8;}
         <option value="5">成立 ≥ 5 年</option>
         <option value="10">成立 ≥ 10 年</option>
       </select>
+      <span class="rangebox">
+        区间
+        <input type="date" id="sd">
+        <span>→</span>
+        <input type="date" id="ed">
+        <button class="btn" id="applyRange">应用</button>
+      </span>
       <button class="btn" id="csvBtn" style="margin-left:auto">导出 CSV</button>
     </div>
 
@@ -118,13 +127,14 @@ tbody tr:hover{background:#FCFBF8;}
             <th class="r" data-sort="chg">日涨跌</th>
             <th class="r" data-sort="y1">近1年</th>
             <th class="r" data-sort="y3">近3年</th>
+            <th class="r" id="thRange" data-sort="rc" style="display:none">区间收益</th>
             <th class="r" data-sort="ytd">今年来</th>
             <th class="r" data-sort="since">成立来</th>
             <th class="r" data-sort="est">成立日</th>
             <th class="r" data-sort="fee">手续费</th>
           </tr>
         </thead>
-        <tbody id="tbody"><tr><td colspan="10"><div class="skel">数据加载中…</div></td></tr></tbody>
+        <tbody id="tbody"><tr><td colspan="11"><div class="skel">数据加载中…</div></td></tr></tbody>
       </table>
     </div>
     <div class="pager">
@@ -143,7 +153,7 @@ tbody tr:hover{background:#FCFBF8;}
 (function(){
   "use strict";
 
-  var S = { rows: [], sortKey: "y1", sortDir: -1, page: 1, size: 50, q: "", m: "", y1: 0, ys: 0 };
+  var S = { rows: [], sortKey: "y1", sortDir: -1, page: 1, size: 50, q: "", m: "", y1: 0, ys: 0, range: null };
 
   var $ = function(id){ return document.getElementById(id); };
 
@@ -186,7 +196,7 @@ tbody tr:hover{background:#FCFBF8;}
       })
       .catch(function(err){
         $("subline").textContent = "基金数据暂时取不到";
-        $("tbody").innerHTML = '<tr><td colspan="10"><div class="error">基金快照还没生成（' +
+        $("tbody").innerHTML = '<tr><td colspan="11"><div class="error">基金快照还没生成（' +
           (err && err.message ? err.message : "未知错误") +
           "）。<br>首次运行 GitHub Actions 的 fund-snapshot 工作流后即可看到数据。</div></td></tr>";
       });
@@ -210,6 +220,12 @@ tbody tr:hover{background:#FCFBF8;}
     var key = S.sortKey, dir = S.sortDir;
     out.sort(function(a, b){
       var va, vb;
+      if (key === "rc"){
+        // 自定义区间收益：没有匹配到的排在最后
+        va = S.range && typeof S.range.map[a.c] === "number" ? S.range.map[a.c] : -Infinity;
+        vb = S.range && typeof S.range.map[b.c] === "number" ? S.range.map[b.c] : -Infinity;
+        return (va - vb) * dir;
+      }
       if (key === "n" || key === "est" || key === "fee"){
         va = a[key] == null ? "" : String(a[key]);
         vb = b[key] == null ? "" : String(b[key]);
@@ -232,7 +248,7 @@ tbody tr:hover{background:#FCFBF8;}
     var slice = list.slice(start, start + S.size);
 
     if (!total){
-      $("tbody").innerHTML = '<tr><td colspan="10"><div class="skel">没有符合条件的基金，试着放宽筛选</div></td></tr>';
+      $("tbody").innerHTML = '<tr><td colspan="11"><div class="skel">没有符合条件的基金，试着放宽筛选</div></td></tr>';
     } else {
       var html = "";
       for (var i = 0; i < slice.length; i++){
@@ -247,6 +263,11 @@ tbody tr:hover{background:#FCFBF8;}
           '<td class="r num ' + cls(c) + '">' + (r.m === "money" ? pct(num(r.y7)) : signed(num(r.chg))) + "</td>" +
           '<td class="r num ' + cls(y1v) + '">' + (r.m === "money" ? "—" : signed(num(r.y1))) + "</td>" +
           '<td class="r num ' + cls(num(r.y3)) + '">' + (r.m === "money" ? "—" : signed(num(r.y3))) + "</td>" +
+          (S.range ? (function(){
+            var rc = S.range.map[r.c];
+            var rv = typeof rc === "number" ? rc : NaN;
+            return '<td class="r num ' + cls(rv) + '">' + signed(rv) + "</td>";
+          })() : "") +
           '<td class="r num ' + cls(num(r.ytd)) + '">' + (r.m === "money" ? "—" : signed(num(r.ytd))) + "</td>" +
           '<td class="r num ' + cls(num(r.since)) + '">' + (r.m === "money" ? "—" : signed(num(r.since))) + "</td>" +
           '<td class="r num">' + (r.est || "—") + "</td>" +
@@ -301,7 +322,67 @@ tbody tr:hover{background:#FCFBF8;}
     setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
 
+  // 自定义区间收益：排行接口本身支持 sd/ed，一次能返回全市场，
+  // 但单页有上限，所以按 allRecords 分页拉完再合并。
+  // 第 19 列（下标 18）就是「自定义区间涨幅」——这也是之前 fee 取错列的原因。
+  function loadRange(sd, ed){
+    if (!sd || !ed){ $("subline").textContent = "请先选择起止日期"; return; }
+    if (sd >= ed){ $("subline").textContent = "结束日期要晚于开始日期"; return; }
+
+    var btn = $("applyRange");
+    btn.disabled = true;
+    $("subline").textContent = "正在拉取 " + sd + " → " + ed + " 区间收益…";
+
+    var map = {}, got = 0, total = Infinity, pi = 1;
+
+    function step(){
+      if (got >= total || pi > 8) return Promise.resolve();
+      var q = "op=ph&dt=kf&ft=all&rs=&gs=0&sc=1nzf&st=desc&sd=" + sd + "&ed=" + ed +
+              "&qdii=&tabSubtype=,,,,,&pi=" + pi + "&pn=5000&dx=1";
+      var target = "fund.eastmoney.com/data/rankhandler.aspx?" + q;
+      return fetch("/api/em?u=" + encodeURIComponent(target), { cache: "no-store" })
+        .then(function(r){
+          if (!r.ok) throw new Error("proxy_" + r.status);
+          return r.text();
+        })
+        .then(function(text){
+          var m = text.match(/datas:\[(.*?)\],allRecords:(\d+)/s);
+          if (!m) throw new Error("bad_shape");
+          total = Number(m[2]) || 0;
+          var arr = m[1] ? m[1].split('","').map(function(s){ return s.replace(/^"|"$/g, ""); }) : [];
+          for (var i = 0; i < arr.length; i++){
+            var f = arr[i].split(",");
+            if (f.length < 19 || !/^\d{6}$/.test(f[0])) continue;
+            var v = parseFloat(f[18]);
+            if (isFinite(v)) map[f[0]] = v;
+          }
+          got += arr.length;
+          pi++;
+          $("subline").textContent = "正在拉取区间收益 " + got + " / " + (total || "?") + " 只…";
+          return step();
+        });
+    }
+
+    step().then(function(){
+      S.range = { sd: sd, ed: ed, map: map };
+      S.sortKey = "rc";
+      S.sortDir = -1;
+      S.page = 1;
+      $("thRange").style.display = "";
+      $("subline").textContent = "区间 " + sd + " → " + ed + " · 已匹配 " +
+        Object.keys(map).length.toLocaleString() + " 只";
+      renderTable();
+    }).catch(function(err){
+      $("subline").textContent = "区间收益拉取失败：" + (err && err.message ? err.message : "未知错误");
+    }).then(function(){
+      btn.disabled = false;
+    });
+  }
+
   function bind(){
+    $("applyRange").addEventListener("click", function(){
+      loadRange($("sd").value, $("ed").value);
+    });
     $("q").addEventListener("input", function(e){ S.q = e.target.value; S.page = 1; renderTable(); });
     $("m").addEventListener("change", function(e){ S.m = e.target.value; S.page = 1; renderTable(); });
     $("y1").addEventListener("change", function(e){ S.y1 = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
@@ -326,6 +407,15 @@ tbody tr:hover{background:#FCFBF8;}
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
   }
+
+  // 默认区间：近一年
+  (function(){
+    var z = function(n){ return n < 10 ? "0" + n : "" + n; };
+    var fmt = function(d){ return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate()); };
+    var t = new Date();
+    $("ed").value = fmt(t);
+    $("sd").value = fmt(new Date(t.getTime() - 365 * 864e5));
+  })();
 
   bind();
   load();
