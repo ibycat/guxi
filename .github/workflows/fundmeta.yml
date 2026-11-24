@@ -1,0 +1,82 @@
+name: fundmeta
+
+# 基金元信息（规模 / 经理 / 跟踪标的）抓取。
+# 需要逐只访问 F10 概况页，量大，所以支持 --limit 分批：
+#   首次用 300 只验证解析，确认无误后再改 MATMETA_LIMIT 逐步放大。
+# 规模来自季报，一季度才变一次，不需要每天全量。
+
+on:
+  schedule:
+    # 30 1 UTC = 09:30 北京时间，避开 07:35 的股票快照
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/fundmeta.mjs"
+      - ".github/workflows/fundmeta.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # 0 = 全量；先用 300 验证解析
+      META_LIMIT: "300"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # data 分支每次全量重写，所以先把已有产物取下来，避免冲掉股票/基金快照
+      - name: 取出已有的 data 分支产物
+        run: |
+          mkdir -p out
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git fetch --depth=1 origin data
+            for f in a.json hk.json fund.json fundmeta.json; do
+              git show "FETCH_HEAD:$f" > "out/$f" 2>/dev/null || rm -f "out/$f"
+            done
+            echo "已带回：$(ls -1 out | tr '\n' ' ')"
+          else
+            echo "data 分支还不存在"
+          fi
+
+      - name: 抓取基金元信息
+        env:
+          SNAPSHOT_DIR: out
+        run: node scripts/fundmeta.mjs --limit "$META_LIMIT"
+
+      - name: 校验产物
+        run: |
+          set -e
+          node -e "
+            const d=require('./out/fundmeta.json');
+            const rows=(d.rows||[]).filter(r=>!r.err);
+            if(!rows.length){console.error('没有成功记录');process.exit(1)}
+            const missFull=rows.filter(r=>!r.full).length;
+            const missScale=rows.filter(r=>r.s==null).length;
+            const missMgr=rows.filter(r=>!r.mgr||!r.mgr.length).length;
+            console.log('ok', rows.length, '条 | 缺全称', missFull, '缺规模', missScale, '缺经理', missMgr);
+            if(missFull/rows.length>0.2||missScale/rows.length>0.3){console.error('关键字段空值率过高，解析可能失效');process.exit(1)}
+          "
+
+      - name: 推送 data 分支
+        run: |
+          set -e
+          cd out
+          git init -q -b data
+          git config user.name "guxi-snapshot-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A
+          git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
+          echo "pushed $(ls -1 | tr '\n' ' ')"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
