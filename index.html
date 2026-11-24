@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>A股 / 港股股息率排行 · 实时看板</title>
+<title>A股 / 港股股息率排行 · 收盘数据</title>
 <style>
 :root{
   --bg:#F6F6F3; --panel:#FFFFFF; --ink:#17181A; --ink2:#5B6068; --ink3:#8B9099;
@@ -262,8 +262,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   </div>
 
   <footer>
-    数据来源：东方财富公开行情与分红送配接口，前端实时拉取，本地缓存 12 小时。<br>
-    「TTM」= 近 12 个月内已实施除权的现金分红合计 ÷ 现价；「上年年报」= 上一完整会计年度分红 ÷ 现价；「近 3 年平均」= 近 3 个年度派息合计 ÷ 现价 ÷ 年数。<br>
+    数据来源：东方财富公开行情与分红送配接口。快照由 GitHub Actions 每个交易日收盘后生成一次，页面读取快照并在本地缓存 12 小时。<br>
+    「TTM」= 近 12 个月内已实施除权的现金分红合计 ÷ 收盘价；「上年年报」= 上一完整会计年度分红 ÷ 收盘价；「近 3 年平均」= 近 3 个年度派息合计 ÷ 收盘价 ÷ 年数。<br>
     A股：分红率为上年年报每 10 股派息 ÷ 10 ÷ 上年基本每股收益。<b>港股</b>：仅计入港币现金派息，美元/人民币派息单列标记且不计入股息率；默认港股通标的（约 668 只），可切换全部港股并自动剔除股价 &lt; 1 港元或市值 &lt; 20 亿港元的仙股。<br>
     本页面仅作数据工具，不构成投资建议。
   </footer>
@@ -1059,8 +1059,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       progress(false);
       setStatus("ok", "快照 " + stamp(S.loadedAt));
       $("subline").textContent = (S.hkAll ? "全部港股 " : "港股通 ") + rows.length.toLocaleString() +
-        " 只 · 首屏 " + (ms / 1000).toFixed(2) + "s · 快照于 " + stamp(S.loadedAt) +
-        " · 收盘 " + (pack.asof || "—");
+        " 只 · 首屏 " + (ms / 1000).toFixed(2) + "s · 收盘 " + (pack.asof || "—") +
+        (pack.partial ? " · 部分分页未取到（" + pack.partial + "）" : "");
       $("hintTime").textContent = "快照 " + stamp(S.loadedAt);
       renderAll();
     }).catch(function(err){
@@ -1418,12 +1418,17 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       if (Date.now() - pack.ts > CACHE_TTL) return null;
       var rows = pack.rows.map(function(a){
         return {
-          code: a[0], name: a[1], price: a[2], chg: a[3], pe: a[4], pb: a[5], mcap: a[6], ind: a[7],
+          code: a[0], name: a[1], price: a[2],
+          // 缓存里 NaN 会被 JSON 存成 null，而 isFinite(null) 是 true，
+          // 后面调 toFixed 会直接抛错，所以这里必须过一遍 nz()
+          chg: nz(a[3]), pe: nz(a[4]), pb: nz(a[5]),
+          mcap: a[6], ind: a[7],
           listDate: a[8] ? new Date(a[8]) : null,
           ttm: a[9] / 1e6, last: a[10] / 1e6, avg3: a[11] / 1e6,
           payout: a[12] < 0 ? null : a[12] / 1e4,
           consec: a[13], years: a[14], ttmCnt: a[15],
-          flags: String(a[16] || "").split("|").filter(Boolean).map(function(s){ var i = s.indexOf(":"); return [s.slice(0, i), s.slice(i + 1)]; }),
+          // 走统一的 parseFlags，否则缓存里如果是旧的缩写码，标签会没颜色
+          flags: parseFlags(a[16]),
           records: String(a[17] || "").split(";").filter(Boolean).map(function(s){
             var p = s.split(",");
             return { period: p[0], dps: Number(p[1]), ex: p[2], prog: p[3], eps: 0 };
@@ -1465,7 +1470,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       progress(false);
       setStatus("ok", "快照 " + stamp(S.loadedAt));
       $("subline").textContent = "全市场 " + rows.length.toLocaleString() + " 只 · 首屏 " +
-        (ms / 1000).toFixed(2) + "s · 收盘 " + (pack.asof || "—");
+        (ms / 1000).toFixed(2) + "s · 收盘 " + (pack.asof || "—") +
+        (pack.partial ? " · 部分分页未取到（" + pack.partial + "）" : "");
       $("hintTime").textContent = "快照 " + stamp(S.loadedAt);
       renderAll();
     });
