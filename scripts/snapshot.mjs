@@ -2,11 +2,14 @@
 //
 // 为什么不放在 Cloudflare 侧跑：
 //   1. Pages Functions 没有 Cron Trigger；要 Cron 就得再建一个 Worker + KV 绑定
-//   2. 更关键的是，东财对 Cloudflare 出口 IP 有风控，抓多了会直接 502；
+//   2. 更关键的是，东财对 Cloudflare 出口 IP 有风控，抓多了直接 502；
 //      GitHub Runner 的出口 IP 完全不同，天然避开这个问题
 //
-// 产物：data/a.json、data/hk.json，由 Pages 当静态文件直出（CDN + gzip），
-// 页面首屏只读这一个文件，不再实时打东财。
+// 产物：a.json、hk.json，推到独立的 data 分支，页面用 raw.githubusercontent 直读。
+// 不提交到 main：Pages 免费版每月只有 500 次构建，半小时一次会打爆配额。
+//
+// 抓取策略：push2 对并发极其敏感（4 并发就能让大部分页失败），
+// 所以行情用低并发 + 5 个镜像轮换 + 缺页串行补拉，并做完整性校验。
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,14 +19,13 @@ import { promisify } from "node:util";
 const execFileP = promisify(execFile);
 
 // 本地调试用：Node 的 fetch 不读系统代理，机器在内网时需要走 curl。
-// GitHub Actions 上直接用 fetch，不设这个变量即可。
+// GitHub Actions 上不设这个变量，直接走 fetch。
 const USE_CURL = !!process.env.SNAPSHOT_USE_CURL;
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-// push2 有多个镜像，被限流时依次回退
 const PUSH2_HOSTS = [
   "push2.eastmoney.com",
   "82.push2.eastmoney.com",
@@ -42,9 +44,8 @@ const NOW = new Date();
 const TODAY = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
 
 const FS_A = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23";
-const FS_A_FIELDS = "f2,f3,f5,f6,f8,f9,f12,f13,f14,f20,f21,f23,f26,f100";
+const FS_A_FIELDS = "f2,f3,f9,f12,f14,f20,f23,f26,f100";
 const FS_HK_GGT = "b:DLMK0146";
-const FS_HK_ALL = "m:128+t:1,m:128+t:2,m:128+t:3,m:128+t:4";
 const FS_HK_FIELDS = "f2,f3,f9,f12,f14,f20,f100";
 
 const CYCLE = new Set([
@@ -53,19 +54,17 @@ const CYCLE = new Set([
   "农化制品", "油服工程", "燃气", "渔业", "种植业"
 ]);
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function rawGet(url) {
   if (USE_CURL) {
     const { stdout } = await execFileP(
       "curl",
-      ["-sS", "--retry", "3", "--retry-all-errors", "--max-time", "25", "-A", UA, "-H", "referer: https://quote.eastmoney.com/", url],
+      ["-sS", "--retry", "2", "--retry-all-errors", "--max-time", "25",
+       "-A", UA, "-H", "referer: https://quote.eastmoney.com/", url],
       { maxBuffer: 128 * 1024 * 1024, encoding: "utf8" }
     );
-    if (!stdout || stdout.charAt(0) === "{") return stdout;
-    throw new Error("curl_empty");
+    return stdout || "";
   }
   const res = await fetch(url, {
     headers: { "user-agent": UA, accept: "*/*", referer: "https://quote.eastmoney.com/" },
@@ -85,48 +84,32 @@ async function getText(url, tries = 3) {
       return text;
     } catch (e) {
       last = e;
-      if (i + 1 < tries) await sleep(400 * (i + 1));
+      if (i + 1 < tries) await sleep(300 + i * 400 + Math.random() * 300);
     }
   }
   throw last;
 }
 
-// 分页拉取：host 列表按顺序回退，每页也允许换 host 重试
-async function pullPages(pathname, query, startPage, pageCount, concurrency) {
-  const out = new Array(pageCount);
-  let idx = 0;
-  let hostIdx = 0;
-
-  async function worker() {
-    while (true) {
-      const i = idx++;
-      if (i >= pageCount) return;
-      const page = startPage + i;
-      let ok = false;
-      for (let attempt = 0; attempt < PUSH2_HOSTS.length && !ok; attempt++) {
-        const host = PUSH2_HOSTS[(hostIdx + attempt) % PUSH2_HOSTS.length];
-        const url = `https://${host}${pathname}?${query}&pn=${page}`;
-        try {
-          out[i] = await getText(url, 2);
-          ok = true;
-        } catch (e) {
-          /* 换下一个镜像 */
-        }
-      }
-      if (!ok) out[i] = null;
+// 镜像轮换：任一域名成功就记住它，下次优先用
+let hostCursor = 0;
+async function getRotating(buildUrl, triesPerHost = 2) {
+  let last;
+  for (let i = 0; i < PUSH2_HOSTS.length; i++) {
+    const idx = (hostCursor + i) % PUSH2_HOSTS.length;
+    try {
+      const text = await getText(buildUrl(PUSH2_HOSTS[idx]), triesPerHost);
+      hostCursor = idx;
+      return text;
+    } catch (e) {
+      last = e;
     }
   }
-
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, pageCount) }, () => worker())
-  );
-  return out;
+  throw last || new Error("all_mirrors_failed");
 }
 
 function diffOf(text) {
   try {
-    const j = JSON.parse(text);
-    const d = j && j.data && j.data.diff;
+    const d = JSON.parse(text).data.diff;
     if (!d) return [];
     return Array.isArray(d) ? d : Object.values(d);
   } catch (e) {
@@ -134,13 +117,54 @@ function diffOf(text) {
   }
 }
 
-function num(v, dflt) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : dflt;
-}
+// 拉一个 clist 列表：先拿首页确定总页数，再低并发拉其余页，最后串行补缺
+async function pullClist(fsCode, fields, po) {
+  const q = (pn) =>
+    `${PATH_CLIST}?po=${po}&np=1&fltt=2&invt=2&fid=f12&fs=${fsCode}&fields=${fields}&pz=100&pn=${pn}`;
 
-function isST(name) {
-  return /ST|退|PT/i.test(name);
+  const first = await getRotating((h) => `https://${h}${q(1)}`);
+  const total = JSON.parse(first).data.total || 0;
+  const pages = Math.max(1, Math.ceil(total / 100));
+  const texts = new Array(pages).fill(null);
+  texts[0] = first;
+
+  let idx = 1;
+  const CONC = 2;
+  async function worker() {
+    while (true) {
+      const i = idx++;
+      if (i >= pages) return;
+      try {
+        texts[i] = await getRotating((h) => `https://${h}${q(i + 1)}`, 2);
+      } catch (e) {
+        texts[i] = null;
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONC, pages - 1) }, () => worker()));
+
+  const missing = [];
+  for (let i = 1; i < pages; i++) if (!texts[i]) missing.push(i);
+  if (missing.length) {
+    console.log(`  缺 ${missing.length} 页，串行补拉…`);
+    for (const i of missing) {
+      try {
+        await sleep(250);
+        texts[i] = await getRotating((h) => `https://${h}${q(i + 1)}`, 3);
+      } catch (e) {
+        /* 放弃该页 */
+      }
+    }
+  }
+
+  const rows = [];
+  let okPages = 0;
+  for (const t of texts) {
+    if (!t) continue;
+    okPages++;
+    rows.push(...diffOf(t));
+  }
+  return { total, pages, okPages, rows };
 }
 
 /* ------------------------------ A 股 ------------------------------ */
@@ -162,13 +186,13 @@ function buildPeriods() {
   return Array.from(new Set(ttm.concat(hist)));
 }
 
-async function fetchBonusPeriod(period, fromOffset, pageSize) {
+async function fetchBonusPeriod(period) {
   const base =
     `${DATACENTER}?reportName=RPT_SHAREBONUS_DET` +
     `&columns=SECURITY_CODE,PRETAX_BONUS_RMB,EX_DIVIDEND_DATE,EQUITY_RECORD_DATE,REPORT_DATE,ASSIGN_PROGRESS,BASIC_EPS` +
     `&filter=${encodeURIComponent(`(REPORT_DATE='${period}')`)}` +
-    `&pageSize=${pageSize}&source=WEB&client=WEB`;
-  const first = await getText(base + "&pageNumber=1&sortColumns=SECURITY_CODE&sortTypes=1");
+    `&pageSize=500&source=WEB&client=WEB&sortColumns=SECURITY_CODE&sortTypes=1`;
+  const first = await getText(base + "&pageNumber=1");
   let res;
   try {
     res = JSON.parse(first).result;
@@ -180,36 +204,32 @@ async function fetchBonusPeriod(period, fromOffset, pageSize) {
   const pages = res.pages || 1;
   for (let p = 2; p <= pages; p++) {
     try {
-      const t = await getText(base + `&pageNumber=${p}&sortColumns=SECURITY_CODE&sortTypes=1`);
-      const r2 = JSON.parse(t).result;
+      const r2 = JSON.parse(await getText(base + `&pageNumber=${p}`)).result;
       if (r2 && r2.data) out.push(...r2.data);
     } catch (e) {
-      /* 丢一页不致命 */
+      /* 丢一页不致命，分红记录冗余度高 */
     }
   }
   return out;
 }
 
+const num = (v, dflt) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : dflt;
+};
+
 async function buildA() {
   console.log("[A] 拉取行情…");
-  const first = await getText(
-    `https://${PUSH2_HOSTS[0]}${PATH_CLIST}?po=0&np=1&fltt=2&invt=2&fid=f12` +
-      `&fs=${FS_A}&fields=${FS_A_FIELDS}&pn=1&pz=100`
-  );
-  const head = JSON.parse(first);
-  const total = (head.data && head.data.total) || 0;
-  const pages = Math.max(1, Math.ceil(total / 100));
-  console.log(`[A] 行情 ${pages} 页 / ${total} 只`);
-  const rest = await pullPages(PATH_CLIST, `po=0&np=1&fltt=2&invt=2&fid=f12&fs=${FS_A}&fields=${FS_A_FIELDS}&pz=100`, 2, pages - 1, 4);
-  const quotes = diffOf(first);
-  for (const t of rest) if (t) quotes.push(...diffOf(t));
-  console.log(`[A] 行情到手 ${quotes.length} 条`);
+  const q = await pullClist(FS_A, FS_A_FIELDS, 0);
+  console.log(`[A] 行情 ${q.okPages}/${q.pages} 页，${q.rows.length}/${q.total} 只`);
+  if (q.rows.length < q.total * 0.95) {
+    throw new Error(`行情不完整：${q.rows.length}/${q.total}`);
+  }
 
   console.log("[A] 拉取分红…");
-  const periods = buildPeriods();
   const recs = [];
-  for (const p of periods) {
-    const rows = await fetchBonusPeriod(p, 0, 500);
+  for (const p of buildPeriods()) {
+    const rows = await fetchBonusPeriod(p);
     recs.push(...rows);
     console.log(`  ${p}: ${rows.length}`);
   }
@@ -236,12 +256,11 @@ async function buildA() {
   const winFrom = new Date(TODAY.getTime() - 365 * DAY);
   const rows = [];
 
-  for (const it of quotes) {
+  for (const it of q.rows) {
     const code = it.f12;
     if (!code) continue;
     const price = num(it.f2, 0);
     if (!(price > 0)) continue;
-    const name = it.f14 || code;
     const ind = String(it.f100 || "").replace(/[ⅠⅡⅢ]+$/, "");
 
     let listDate = 0;
@@ -253,9 +272,7 @@ async function buildA() {
     const all = byCode.get(code) || [];
     const impl = all.filter((x) => x.prog.includes("实施"));
 
-    let ttmSum = 0;
-    let ttmCnt = 0;
-    let annualInWin = 0;
+    let ttmSum = 0, ttmCnt = 0, annualInWin = 0;
     for (const x of impl) {
       const d = x.ex ? new Date(x.ex + "T00:00:00") : null;
       if (d && !isNaN(d) && d >= winFrom && d <= TODAY) {
@@ -280,14 +297,10 @@ async function buildA() {
     let years = 0;
     for (let k = 1; k <= HISTORY_YEARS; k++) if (yearSet.has(y0 - k)) years++;
 
-    let sum3 = 0;
-    let n3 = 0;
+    let sum3 = 0, n3 = 0;
     for (let t = 1; t <= 3; t++) {
       const found = annuals.find((a) => +a.period.slice(0, 4) === y0 - t);
-      if (found) {
-        sum3 += found.dps;
-        n3++;
-      }
+      if (found) { sum3 += found.dps; n3++; }
     }
     const avg3 = n3 ? sum3 / n3 / price : 0;
 
@@ -302,29 +315,14 @@ async function buildA() {
       flags.push("g:稳健");
 
     rows.push([
-      code,
-      name,
-      price,
-      num(it.f3, NaN),
-      num(it.f9, NaN),
-      num(it.f23, NaN),
-      num(it.f20, 0),
-      ind,
-      listDate,
-      Math.round(ttm * 1e6),
-      Math.round(last * 1e6),
-      Math.round(avg3 * 1e6),
+      code, it.f14 || code, price,
+      num(it.f3, NaN), num(it.f9, NaN), num(it.f23, NaN), num(it.f20, 0), ind, listDate,
+      Math.round(ttm * 1e6), Math.round(last * 1e6), Math.round(avg3 * 1e6),
       payout == null ? -1 : Math.round(payout * 1e4),
-      consec,
-      years,
-      ttmCnt,
+      consec, years, ttmCnt,
       flags.join("|"),
-      all
-        .slice()
-        .sort((a, b) => b.period.localeCompare(a.period))
-        .slice(0, 6)
-        .map((x) => `${x.period},${x.dps},${x.ex},${x.prog}`)
-        .join(";")
+      all.slice().sort((a, b) => b.period.localeCompare(a.period)).slice(0, 6)
+        .map((x) => `${x.period},${x.dps},${x.ex},${x.prog}`).join(";")
     ]);
   }
   console.log(`[A] 计算完成 ${rows.length} 行`);
@@ -333,11 +331,10 @@ async function buildA() {
 
 /* ------------------------------ 港股 ------------------------------ */
 
-function ymd(d) {
-  const m = d.getMonth() + 1;
-  const dd = d.getDate();
-  return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (dd < 10 ? "0" : "") + dd;
-}
+const ymd = (d) => {
+  const m = d.getMonth() + 1, dd = d.getDate();
+  return `${d.getFullYear()}-${m < 10 ? "0" : ""}${m}-${dd < 10 ? "0" : ""}${dd}`;
+};
 
 function parseHKDps(text) {
   const m = /每股派\s*(港币|港元|人民币|美元|新加坡元|澳元)?\s*([0-9]+(?:\.[0-9]+)?)\s*元/.exec(text || "");
@@ -368,11 +365,10 @@ async function fetchHKDiv(from) {
   console.log(`[HK] 派息 ${pages} 页 / ${res.count} 条`);
   for (let p = 2; p <= pages; p++) {
     try {
-      const t = await getText(base + `&pageNumber=${p}`);
-      const r2 = JSON.parse(t).result;
+      const r2 = JSON.parse(await getText(base + `&pageNumber=${p}`)).result;
       if (r2 && r2.data) out.push(...r2.data);
     } catch (e) {
-      /* 丢一页不致命 */
+      /* 丢一页会让部分股票少算股息率，但比整体失败好 */
     }
   }
   return out;
@@ -380,14 +376,11 @@ async function fetchHKDiv(from) {
 
 async function buildHK() {
   console.log("[HK] 拉取港股通行情…");
-  const qq = `po=1&np=1&fltt=2&invt=2&fid=f12&fs=${FS_HK_GGT}&fields=${FS_HK_FIELDS}&pz=100`;
-  const first = await getText(`https://${PUSH2_HOSTS[0]}${PATH_CLIST}?${qq}&pn=1`);
-  const total = JSON.parse(first).data.total || 0;
-  const pages = Math.max(1, Math.ceil(total / 100));
-  const rest = await pullPages(PATH_CLIST, qq, 2, pages - 1, 2);
-  const quotes = diffOf(first);
-  for (const t of rest) if (t) quotes.push(...diffOf(t));
-  console.log(`[HK] 行情 ${quotes.length}/${total} 条`);
+  const q = await pullClist(FS_HK_GGT, FS_HK_FIELDS, 1);
+  console.log(`[HK] 行情 ${q.okPages}/${q.pages} 页，${q.rows.length}/${q.total} 只`);
+  if (q.rows.length < q.total * 0.95) {
+    throw new Error(`行情不完整：${q.rows.length}/${q.total}`);
+  }
 
   const from = ymd(new Date(TODAY.getFullYear() - HISTORY_YEARS, 0, 1));
   const divs = await fetchHKDiv(from);
@@ -408,38 +401,26 @@ async function buildHK() {
   const winFrom = new Date(TODAY.getTime() - 365 * DAY);
   const rows = [];
 
-  for (const it of quotes) {
+  for (const it of q.rows) {
     const c = it.f12;
     if (!/^0\d{4}$/.test(c || "")) continue;
     const price = num(it.f2, 0);
     if (!(price > 0)) continue;
-    const mcap = num(it.f20, 0);
 
     const rr = byCode.get(c) || [];
-    let ttmSum = 0;
-    let ttmCnt = 0;
-    let nonHkd = 0;
+    let ttmSum = 0, ttmCnt = 0, nonHkd = 0;
     const byYear = new Map();
     for (const x of rr) {
-      if (x.ccy !== "港币") {
-        nonHkd++;
-        continue;
-      }
+      if (x.ccy !== "港币") { nonHkd++; continue; }
       const d = x.ex ? new Date(x.ex + "T00:00:00") : null;
-      if (d && !isNaN(d) && d >= winFrom && d <= TODAY) {
-        ttmSum += x.dps;
-        ttmCnt++;
-      }
+      if (d && !isNaN(d) && d >= winFrom && d <= TODAY) { ttmSum += x.dps; ttmCnt++; }
       if (x.year) byYear.set(x.year, (byYear.get(x.year) || 0) + x.dps);
     }
     const ttm = ttmSum / price;
 
     let lastYr = null;
-    for (let y = y0 - 1; y >= y0 - 2; y--) {
-      if (byYear.has(y)) {
-        lastYr = y;
-        break;
-      }
+    for (let yy = y0 - 1; yy >= y0 - 2; yy--) {
+      if (byYear.has(yy)) { lastYr = yy; break; }
     }
     const last = lastYr ? byYear.get(lastYr) / price : 0;
 
@@ -448,13 +429,9 @@ async function buildHK() {
     let years = 0;
     for (let k = 1; k <= HISTORY_YEARS; k++) if (byYear.has(y0 - k)) years++;
 
-    let sum3 = 0;
-    let n3 = 0;
+    let sum3 = 0, n3 = 0;
     for (let t = 1; t <= 3; t++) {
-      if (byYear.has(y0 - t)) {
-        sum3 += byYear.get(y0 - t);
-        n3++;
-      }
+      if (byYear.has(y0 - t)) { sum3 += byYear.get(y0 - t); n3++; }
     }
     const avg3 = n3 ? sum3 / n3 / price : 0;
 
@@ -467,26 +444,13 @@ async function buildHK() {
     if (ttm >= 0.04 && consec >= 5) flags.push("g:稳健");
 
     rows.push([
-      c,
-      it.f14 || c,
-      price,
-      num(it.f3, NaN),
-      num(it.f9, NaN),
-      mcap,
-      String(it.f100 || ""),
-      Math.round(ttm * 1e6),
-      Math.round(last * 1e6),
-      Math.round(avg3 * 1e6),
-      consec,
-      years,
-      ttmCnt,
+      c, it.f14 || c, price,
+      num(it.f3, NaN), num(it.f9, NaN), num(it.f20, 0), String(it.f100 || ""),
+      Math.round(ttm * 1e6), Math.round(last * 1e6), Math.round(avg3 * 1e6),
+      consec, years, ttmCnt,
       flags.join("|"),
-      rr
-        .slice()
-        .sort((a, b) => b.ex.localeCompare(a.ex))
-        .slice(0, 8)
-        .map((x) => `${x.year},${x.dps},${x.ex},${x.ccy},${x.type}`)
-        .join(";")
+      rr.slice().sort((a, b) => b.ex.localeCompare(a.ex)).slice(0, 8)
+        .map((x) => `${x.year},${x.dps},${x.ex},${x.ccy},${x.type}`).join(";")
     ]);
   }
   console.log(`[HK] 计算完成 ${rows.length} 行`);
@@ -496,8 +460,6 @@ async function buildHK() {
 /* ------------------------------ 主流程 ------------------------------ */
 
 async function main() {
-  // 快照不进 main：Pages 免费版每月 500 次构建，频繁提交会打爆配额。
-  // 工作流会把产物推到独立的 data 分支，页面用 raw.githubusercontent 直读。
   const outDir = path.join(process.cwd(), process.env.SNAPSHOT_DIR || "data");
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -506,17 +468,23 @@ async function main() {
   if (!only || only === "a") jobs.push(["a", buildA]);
   if (!only || only === "hk") jobs.push(["hk", buildHK]);
 
+  let okCount = 0;
   for (const [name, fn] of jobs) {
     try {
       const pack = await fn();
-      const file = path.join(outDir, name + ".json");
       const text = JSON.stringify(pack);
-      fs.writeFileSync(file, text);
-      console.log(`写入 ${file}  ${(text.length / 1024).toFixed(0)}KB  ${pack.rows.length} 行`);
+      fs.writeFileSync(path.join(outDir, name + ".json"), text);
+      console.log(`OK ${name}.json  ${(text.length / 1024).toFixed(0)}KB  ${pack.rows.length} 行`);
+      okCount++;
     } catch (e) {
-      console.error(`[${name}] 失败：${e && e.message}`);
-      process.exitCode = 1;
+      // 单个市场失败不影响另一个；旧文件由工作流从上一次产物恢复
+      console.error(`FAIL ${name}: ${e && e.message}`);
     }
+  }
+
+  if (okCount === 0) {
+    console.error("两个市场都失败，退出");
+    process.exit(1);
   }
 }
 

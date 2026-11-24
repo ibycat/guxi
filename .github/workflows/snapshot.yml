@@ -2,7 +2,7 @@ name: snapshot
 
 on:
   schedule:
-    # 每 30 分钟。GitHub 的定时任务可能延迟几分钟，对股息率榜单无影响
+    # 每 30 分钟。GitHub 定时任务可能延迟几分钟，对股息率榜单无影响
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
@@ -11,18 +11,34 @@ permissions:
 
 concurrency:
   group: snapshot
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      # 先把上一次的产物取回来：某个市场这次抓失败时，沿用旧文件而不是丢掉
+      - name: 恢复上一次快照
+        run: |
+          mkdir -p out
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git fetch --depth=1 origin data
+            for f in a.json hk.json; do
+              git show "FETCH_HEAD:$f" > "out/$f" 2>/dev/null || rm -f "out/$f"
+            done
+            ls -lh out/ || true
+          else
+            echo "data 分支还不存在，本次全量生成"
+          fi
 
       - name: 生成快照
         env:
@@ -30,9 +46,11 @@ jobs:
         run: node scripts/snapshot.mjs
 
       - name: 检查产物
-        run: ls -lh out/
+        run: |
+          ls -lh out/
+          test -s out/a.json || test -s out/hk.json
 
-      - name: 推送到 data 分支（单提交，force-push，不污染 main 历史）
+      - name: 推送到 data 分支（单提交 force-push，不污染 main 历史）
         run: |
           set -e
           cd out
@@ -42,5 +60,6 @@ jobs:
           git add -A
           git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
+          echo "pushed $(ls -1 | tr '\n' ' ')"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
