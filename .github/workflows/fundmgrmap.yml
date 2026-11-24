@@ -3,6 +3,7 @@ name: fundmgrmap
 # 经理「姓名 → id」映射（用 /fundSearch?m=7 反查）。
 # 建好之后 fundmgr 就不再依赖 fundmeta，fundmeta 可以下线。
 # 注意：同一个 concurrency group 只保留一个排队中的任务，新触发的会把旧的排队任务顶掉。
+# 反查是串行第三方接口，4000 个姓名单轮就要 20~30 分钟，所以 timeout 放到 60。
 
 on:
   schedule:
@@ -24,7 +25,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       MAP_LIMIT: "4000"
     steps:
