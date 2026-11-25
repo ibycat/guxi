@@ -19,12 +19,15 @@ import path from "node:path";
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-const SRC = "https://raw.githubusercontent.com/ibycat/guxi/data/fund.json";
+const SRC = "https://raw.githubusercontent.com/ibycat/guxi/data/fundrank.json";
 const BASE = "https://fundf10.eastmoney.com/jbgk_";
 const REFERER = "https://fundf10.eastmoney.com/";
 
 const OUT_DIR = process.env.SNAPSHOT_DIR || "data";
-const CONCURRENCY = 3;
+const CONCURRENCY = 8;
+
+// 代码 → 简称，用来填充 funddetail.json 的 nm 字段（F10 概况页不给简称）
+const NAME_MAP = new Map();
 
 function arg(name, def) {
   const i = process.argv.indexOf("--" + name);
@@ -136,18 +139,25 @@ async function fetchCode(code) {
 }
 
 async function loadCodes() {
-  const local = path.join(OUT_DIR, "fund.json");
+  // 代码来源改成 fundrank.json（原来的 fund.json 已随旧工作流下线）
+  const local = path.join(OUT_DIR, "fundrank.json");
   let pack = null;
   if (fs.existsSync(local)) {
     pack = JSON.parse(fs.readFileSync(local, "utf8"));
     console.log("[META] 使用本地 " + local);
   } else {
     const res = await fetch(SRC, { headers: { "user-agent": UA } });
-    if (!res.ok) throw new Error("fund.json 拉取失败 " + res.status);
+    if (!res.ok) throw new Error("fundrank.json 拉取失败 " + res.status);
     pack = await res.json();
-    console.log("[META] 从 data 分支读取 fund.json");
+    console.log("[META] 从 data 分支读取 fundrank.json");
   }
-  return (pack.rows || []).map((r) => r.c).filter(Boolean);
+  const codes = [];
+  for (const r of pack.rows || []) {
+    if (!r || !r.c) continue;
+    codes.push(r.c);
+    if (r.n) NAME_MAP.set(r.c, r.n);
+  }
+  return codes;
 }
 
 // 读取上一次的产物，用于增量续跑：已经抓成功的代码不再重复抓，
@@ -194,11 +204,11 @@ async function main() {
       if (n % 25 === 0 || n === codes.length) {
         console.log("  进度 " + n + "/" + codes.length + "，成功 " + ok);
       }
-      await sleep(120);
+      await sleep(80);
     }
   }
 
-  await Promise.all([worker(), worker(), worker()]);
+  await Promise.all(new Array(CONCURRENCY).fill(0).map(() => worker()));
   console.log("[META] 抓取完成：成功 " + ok + " / " + rows.length);
 
   // 合并：本次成功的写入，失败的丢弃（下次自动重试），历史记录保留
@@ -247,6 +257,63 @@ async function main() {
   };
   const text = JSON.stringify(pack);
   fs.writeFileSync(path.join(OUT_DIR, "fundmeta.json"), text);
+
+  // 顺手产出两份「下游已经在用」的文件，避免再去依赖第三方接口：
+  //   funddetail.json —— 基金页读它取全称/经理/成立日/规模/基准
+  //   mgrmap.json     —— 经理姓名 → id，fundmgr 靠它确定要抓谁
+  const det = [];
+  const mgrMap = Object.create(null);
+  const mgrRows = [];
+  for (const r of allRows) {
+    const mgr = r.mgr || [];
+    det.push({
+      c: r.c,
+      full: r.full || "",
+      nm: NAME_MAP.get(r.c) || "",
+      t: r.t || "",
+      est: r.est || "",
+      s: r.s,
+      jj: mgr.map((m) => m.n).join("、"),
+      jjn: mgr.length,
+      bench: r.bench || "",
+      idx: r.track || "",
+      gs: r.gs,
+      gn: r.gn
+    });
+    for (const m of mgr) {
+      if (!m || !m.id || !m.n) continue;
+      if (!mgrMap[m.n]) {
+        mgrMap[m.n] = m.id;
+        mgrRows.push({ n: m.n, id: m.id, com: "", exact: true, dup: 0 });
+      }
+    }
+  }
+
+  fs.writeFileSync(
+    path.join(OUT_DIR, "funddetail.json"),
+    JSON.stringify({
+      v: 1,
+      ts: Date.now(),
+      total: all.length,
+      count: det.length,
+      mode: pack.mode,
+      rows: det
+    })
+  );
+  fs.writeFileSync(
+    path.join(OUT_DIR, "mgrmap.json"),
+    JSON.stringify({
+      v: 1,
+      ts: Date.now(),
+      count: mgrRows.length,
+      totalNames: mgrRows.length,
+      map: mgrMap,
+      rows: mgrRows
+    })
+  );
+  console.log(
+    "OK 附带产出 funddetail.json " + det.length + " 只、mgrmap.json " + mgrRows.length + " 位经理"
+  );
   console.log(
     "OK fundmeta.json  " + (text.length / 1024).toFixed(0) + "KB  覆盖 " +
     allRows.length + " / " + all.length + " 只"
