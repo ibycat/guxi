@@ -37,6 +37,6 @@ jobs:
           node scripts/fundroutes.mjs
 
       - name: 推送产物
-        run: bash scripts/pushdata.sh apiroutes.json
+        run: bash scripts/pushdata.sh apiroutes.json managerdoc.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

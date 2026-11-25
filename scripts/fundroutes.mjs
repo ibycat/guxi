@@ -29,6 +29,25 @@ async function hit(p) {
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
+  // 0) 文档正文 40KB，抓取工具会截断，干脆在这里把经理那一章切出来
+  try {
+    const docUrl = "https://raw.githubusercontent.com/kouchao/TiantianFundApi/main/docs/apis/README.md";
+    const res = await fetch(docUrl, { signal: AbortSignal.timeout(20000) });
+    if (res.ok) {
+      const md = await res.text();
+      const start = md.indexOf("## 基金经理");
+      const end = md.indexOf("## 股票");
+      const sec = start >= 0 ? md.slice(start, end > start ? end : start + 12000) : "";
+      // 基金章里的「获取基金的基金经理」
+      const fStart = md.indexOf("获取基金的基金经理");
+      const fSec = fStart >= 0 ? md.slice(fStart, fStart + 1500) : "";
+      fs.writeFileSync(path.join(OUT_DIR, "managerdoc.md"), sec + "\n\n---\n\n" + fSec);
+      console.log("OK managerdoc.md " + (sec.length + fSec.length) + " 字符");
+    }
+  } catch (e) {
+    console.log("文档抓取失败：" + (e && e.message));
+  }
+
   // 1) 先找 openapi
   const candidates = ["/openapi.json", "/swagger.json", "/docs", "/routes", "/api"];
   let spec = null, specPath = "";
