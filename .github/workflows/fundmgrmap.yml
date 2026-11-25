@@ -1,17 +1,13 @@
 name: fundmgrmap
 
 # 经理「姓名 → id」映射（用 /fundSearch?m=7 反查）。
-# 建好之后 fundmgr 就不再依赖 fundmeta，fundmeta 可以下线。
+#
+# 已停用自动运行。2026-11-25 起 mgrmap 由 fundmeta 顺带产出
+# （F10 概况页的经理链接里直接带 id，不用再反查），且增量合并、只增不减。
+# 保留 workflow_dispatch 仅作应急兜底，不要再加回 schedule。
 
 on:
-  schedule:
-    # 每天 02:40 UTC（北京 10:40），排在 funddetail 之后
-    - cron: "40 2 * * *"
   workflow_dispatch:
-  push:
-    paths:
-      - "scripts/fundmgrmap.mjs"
-      - ".github/workflows/fundmgrmap.yml"
 
 permissions:
   contents: write
