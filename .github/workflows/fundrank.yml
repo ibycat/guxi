@@ -64,6 +64,6 @@ jobs:
           "
 
       - name: 推送 data 分支
-        run: bash scripts/pushdata.sh out
+        run: bash scripts/pushdata.sh fundrank.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
