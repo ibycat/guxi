@@ -17,7 +17,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: data-branch-writer
+  # 每个 workflow 自己的组：只防止自身重复触发，不与别的 workflow 互相顶掉排队任务
+  group: ${{ github.workflow }}
   cancel-in-progress: false
 
 jobs:
@@ -68,15 +69,6 @@ jobs:
           "
 
       - name: 推送 data 分支
-        run: |
-          set -e
-          cd out
-          git init -q -b data
-          git config user.name "guxi-snapshot-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add -A
-          git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
-          echo "pushed $(ls -1 | tr '\n' ' ')"
+        run: bash scripts/pushdata.sh out
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
