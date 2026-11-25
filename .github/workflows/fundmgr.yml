@@ -21,7 +21,7 @@ permissions:
 # 多个 run 同时 force push 同一个 data 分支会互相覆盖，
 # 用同一 group 串行化；不取消进行中的任务，避免半途中断
 concurrency:
-  group: data-branch-writer
+  group: ${{ github.workflow }}
   cancel-in-progress: false
 
 jobs:
@@ -72,15 +72,6 @@ jobs:
           "
 
       - name: 推送 data 分支
-        run: |
-          set -e
-          cd out
-          git init -q -b data
-          git config user.name "guxi-snapshot-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add -A
-          git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
-          echo "pushed $(ls -1 | tr '\n' ' ')"
+        run: bash scripts/pushdata.sh managers.json fundmgr.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
