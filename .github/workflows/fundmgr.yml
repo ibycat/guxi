@@ -44,7 +44,7 @@ jobs:
           mkdir -p out
           if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
             git fetch --depth=1 origin data
-            for f in a.json hk.json fund.json fundmeta.json managers.json fundmgr.json; do
+            for f in a.json hk.json fund.json fundmeta.json mgrmap.json managers.json fundmgr.json; do
               git show "FETCH_HEAD:$f" > "out/$f" 2>/dev/null || rm -f "out/$f"
             done
             echo "已带回：$(ls -1 out | tr '\n' ' ')"
