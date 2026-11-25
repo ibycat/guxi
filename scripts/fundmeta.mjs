@@ -12,8 +12,6 @@
 //   node scripts/fundmeta.mjs --limit 300     只抓前 300 只（样本验证）
 //   node scripts/fundmeta.mjs --limit 0       全量
 // 产物：fundmeta.json（含每只基金的自身规模 s、同全称合并后的 gs）
-// 分批策略：每批 6000 只、脚本自带增量续跑、覆盖到 fundrank 的 95% 才替换 funddetail（由工作流推送步骤把关）
-// 收尾批次：剩余约 2900 只，跑完即由东财接管 funddetail（本条注释用于触发本轮工作流）
 
 import fs from "node:fs";
 import path from "node:path";
@@ -171,7 +169,11 @@ function loadExisting() {
     const d = JSON.parse(fs.readFileSync(p, "utf8"));
     const m = new Map();
     for (const r of d.rows || []) {
-      if (r && r.c && !r.err) m.set(r.c, r);
+      if (r && r.c && !r.err) {
+        // 老记录没有抓取时间，按 0 处理 —— 滚动刷新时它们排在队首，最先被更新
+        if (!r.t) r.t = 0;
+        m.set(r.c, r);
+      }
     }
     return m;
   } catch (e) {
@@ -184,13 +186,29 @@ async function main() {
 
   const all = await loadCodes();
   const limit = arg("limit", 300);
+  // 滚动刷新：每轮额外重抓 N 只「最久没更新」的基金。
+  // 只补新增的话，规模（季报）和经理会永远停在第一次抓到的状态。
+  const refreshN = arg("refresh", 0);
   const done = loadExisting();
   // 已经抓过的跳过，每次只处理「还没抓的」前 N 只 —— 这样分批跑能自然接续
   const pending = all.filter((c) => !done.has(c));
+  let codes = limit > 0 ? pending.slice(0, limit) : pending;
+
+  let refreshCodes = [];
+  if (refreshN > 0) {
+    const chosen = new Set(codes);
+    refreshCodes = Array.from(done.values())
+      .filter((r) => !chosen.has(r.c))
+      .sort((a, b) => (a.t || 0) - (b.t || 0))
+      .slice(0, refreshN)
+      .map((r) => r.c);
+    codes = codes.concat(refreshCodes);
+  }
+
   console.log(
-    "[META] 全量 " + all.length + " 只，已覆盖 " + done.size + " 只，本次待抓 " + Math.min(limit > 0 ? limit : pending.length, pending.length)
+    "[META] 全量 " + all.length + " 只，已覆盖 " + done.size + " 只；" +
+    "本批新增 " + (codes.length - refreshCodes.length) + " 只，滚动刷新 " + refreshCodes.length + " 只"
   );
-  const codes = limit > 0 ? pending.slice(0, limit) : pending;
 
   const rows = [];
   let n = 0, ok = 0;
@@ -201,7 +219,7 @@ async function main() {
       const code = codes[idx++];
       const rec = await fetchCode(code);
       n++;
-      if (!rec.err) ok++;
+      if (!rec.err) { ok++; rec.t = Date.now(); }
       rows.push(rec);
       if (n % 25 === 0 || n === codes.length) {
         console.log("  进度 " + n + "/" + codes.length + "，成功 " + ok);

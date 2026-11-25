@@ -33,6 +33,10 @@ jobs:
     env:
       # 每批抓多少只；脚本自带增量，几千一批几天铺满。全量 2.5 万，单次要 20~30 分钟
       META_LIMIT: "6000"
+      # 滚动刷新：每轮额外重抓多少只「最久没更新」的基金。
+      # 没有这一步，已覆盖的 2 万只会永远停在第一次抓到的规模/经理上。
+      # 1200 只约 3 分钟，2 万只大约 17 天轮一遍。
+      META_REFRESH: "1200"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,7 +72,7 @@ jobs:
       - name: 抓取基金元信息
         env:
           SNAPSHOT_DIR: out
-        run: node scripts/fundmeta.mjs --limit "$META_LIMIT"
+        run: node scripts/fundmeta.mjs --limit "$META_LIMIT" --refresh "$META_REFRESH"
 
       - name: 校验产物
         run: |
