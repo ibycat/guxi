@@ -1,17 +1,21 @@
 name: fundmeta
 
-# 基金元信息（规模 / 经理 / 跟踪标的）抓取。
-# 需要逐只访问 F10 概况页，量大，所以支持 --limit 分批：
-#   首次用 300 只验证解析，确认无误后再改 META_LIMIT 逐步放大。
-# 规模来自季报，一季度才变一次，不需要每天全量。
+# 基金元信息（全称 / 规模 / 经理 / 跟踪标的 / 成立日）抓取。
 #
-# 已降级为「手动兜底」：只保留 workflow_dispatch，不再有 schedule / push 触发。
-# 原因：fundmeta 逐只爬东财 F10 页面，速度和稳定性都不如第三方 funddetail；
-#       经理 id 也已改由 mgrmap 提供。保留它只为必要时手动跑一次。
-# 发布统一走 scripts/pushdata.sh（clone 最新 data 分支 + 覆盖 + 普通 push），
-# 不再 force push，避免把 fundrank / funddetail 等他人产物冲掉。
+# 这是「去第三方接口」后的正式详情来源：逐只访问东财 F10 概况页。
+# 一次请求同时拿到全称、规模、经理（含 id）、跟踪标的、业绩基准、成立日、类型，
+# 是 funddetail.json 的超集；跑完顺带产出 funddetail.json 与 mgrmap.json，
+# 下游页面和 fundmgr 都不用改。
+#
+# 量大（全市场 2.5 万只），所以支持 --limit 分批，脚本自带增量续跑：
+# 已经抓成功的代码不会重复抓，分批跑自然接续。
+#
+# 发布统一走 scripts/pushdata.sh（clone 最新 data 分支 + 覆盖 + 普通 push）。
 
 on:
+  schedule:
+    # 每天 02:20 UTC（北京 10:20），排在 fundrank 之后
+    - cron: "20 2 * * *"
   workflow_dispatch:
 
 permissions:
@@ -22,8 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      # 每批抓多少只；0 = 一次抓完（会超时，别用）
-      META_LIMIT: "3000"
+      # 每批抓多少只；脚本自带增量，几千一批几天铺满。全量 2.5 万，单次要 20~30 分钟
+      META_LIMIT: "6000"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,13 +43,22 @@ jobs:
           mkdir -p out
           if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
             git fetch --depth=1 origin data
-            for f in a.json hk.json fund.json fundmeta.json; do
+            for f in a.json hk.json fundrank.json fundmeta.json funddetail.json mgrmap.json managers.json fundmgr.json; do
               git show "FETCH_HEAD:$f" > "out/$f" 2>/dev/null || rm -f "out/$f"
             done
             echo "已带回：$(ls -1 out | tr '\n' ' ')"
           else
             echo "data 分支还不存在"
           fi
+
+      - name: 记录现有 funddetail 覆盖数
+        run: |
+          if [ -f out/funddetail.json ]; then
+            node -e "console.log((require('./out/funddetail.json').rows||[]).length)" > old_detail.txt
+          else
+            echo 0 > old_detail.txt
+          fi
+          echo "现有 funddetail 覆盖 $(cat old_detail.txt) 只"
 
       - name: 抓取基金元信息
         env:
@@ -62,11 +75,28 @@ jobs:
             const missFull=rows.filter(r=>!r.full).length;
             const missScale=rows.filter(r=>r.s==null).length;
             const missMgr=rows.filter(r=>!r.mgr||!r.mgr.length).length;
-            console.log('ok', rows.length, '条 | 缺全称', missFull, '缺规模', missScale, '缺经理', missMgr);
+            const r1=(missFull/rows.length*100).toFixed(1);
+            const r2=(missScale/rows.length*100).toFixed(1);
+            const r3=(missMgr/rows.length*100).toFixed(1);
+            console.log('ok', rows.length, '条 | 缺全称 '+r1+'%', '缺规模 '+r2+'%', '缺经理 '+r3+'%');
             if(missFull/rows.length>0.2||missScale/rows.length>0.3){console.error('关键字段空值率过高，解析可能失效');process.exit(1)}
+            const det=require('./out/funddetail.json');
+            const mm=require('./out/mgrmap.json');
+            console.log('附带：funddetail', (det.rows||[]).length, '只，mgrmap', mm.count, '位经理');
+            if((det.rows||[]).length < rows.length*0.9){console.error('funddetail 行数异常');process.exit(1)}
           "
 
       - name: 推送 data 分支
-        run: bash scripts/pushdata.sh fundmeta.json
+        run: |
+          set -e
+          OLD=$(cat old_detail.txt)
+          NEW=$(node -e "console.log((require('./out/funddetail.json').rows||[]).length)")
+          if [ "$NEW" -ge "$OLD" ]; then
+            echo "funddetail 覆盖 $NEW >= 现有 $OLD，一并发布"
+            bash scripts/pushdata.sh fundmeta.json funddetail.json mgrmap.json
+          else
+            echo "本次只有 $NEW < 现有 $OLD，只发布 fundmeta/mgrmap，不降级 funddetail"
+            bash scripts/pushdata.sh fundmeta.json mgrmap.json
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
