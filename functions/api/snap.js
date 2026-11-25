@@ -28,8 +28,12 @@ const CORS = {
   "access-control-allow-headers": "content-type"
 };
 
-const TTL_FRESH = 300; // 5 分钟：快照一天才更新几次
-const TTL_STALE = 21600; // 6 小时：兜底副本
+// 快照每天收盘后更新一次，边缘缓存没必要只留 5 分钟。
+// 原来 5 分钟一过期，冷 colo 的第一个人就要回源 GitHub（常见 0.5~1.5s），
+// 这段时间就是用户感知的「首页打开慢」。改成一小时，缓存 key 里带版本号，
+// 格式变了照样能立刻失效；点「刷新」走 nocache=1 也会直接回源。
+const TTL_FRESH = 3600; // 1 小时
+const TTL_STALE = 604800; // 7 天：兜底副本，源站挂了也能开
 
 function jsonError(error, status) {
   return new Response(JSON.stringify({ ok: false, error }), {
