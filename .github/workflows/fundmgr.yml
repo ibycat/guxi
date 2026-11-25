@@ -6,9 +6,9 @@ name: fundmgr
 
 on:
   schedule:
-    # 每天一批（UTC 03:00 = 北京 11:00）。经理数量约 2500，每批 600 位，
-    # 4~5 批铺满；之后每次只补新增的经理。
-    - cron: "0 3 * * *"
+    # 每天一批（UTC 05:10 = 北京 13:10）。必须排在 fundmgrmap（02:40）之后，
+    # 因为它依赖 mgrmap.json；之前排 03:00 时反查还没跑完，导致拿不到经理 id 直接失败。
+    - cron: "10 5 * * *"
   workflow_dispatch:
   push:
     paths:
