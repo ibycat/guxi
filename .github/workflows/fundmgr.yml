@@ -1,8 +1,9 @@
 name: fundmgr
 
 # 基金经理抓取（从业年限 / 在管规模 / 任职天数）。
-# 依赖 fundmeta.json 里的经理 id 列表，所以要在 fundmeta 之后跑。
-# 先用 MGR_LIMIT=20 验证解析，确认无误再调大。
+# 经理 id 来自 mgrmap.json（姓名→id，由 fundmgrmap 生成），所以必须排在它之后。
+# 经理是单点查询（没有批量接口），但 5 并发下 4000 位约 15 分钟能跑完，
+# 一轮就能覆盖全市场，之后每天只补新增的经理。
 
 on:
   schedule:
@@ -27,9 +28,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
-      MGR_LIMIT: "600"
+      # 一次覆盖全部经理（mgrmap 里约 4000 位）
+      MGR_LIMIT: "4500"
     steps:
       - uses: actions/checkout@v4
         with:
