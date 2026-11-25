@@ -94,13 +94,19 @@ jobs:
       - name: 推送 data 分支
         run: |
           set -e
-          OLD=$(cat old_detail.txt)
+          # 不能拿「旧的 funddetail 行数」当门槛：旧数据来自第三方，含 2.5 万只
+          # （把未成立、已清盘的份额也算进去了），而东财排行只给 2 万只存续基金。
+          # 用旧行数比，永远追不上，funddetail 就永远换不过来。
+          # 正确的门槛是「本轮目标」：fundrank 里有多少只，覆盖到 95% 就说明这批齐了。
+          TARGET=$(node -e "console.log((require('./out/fundrank.json').rows||[]).length)")
           NEW=$(node -e "console.log((require('./out/funddetail.json').rows||[]).length)")
-          if [ "$NEW" -ge "$OLD" ]; then
-            echo "funddetail 覆盖 $NEW >= 现有 $OLD，一并发布"
+          NEED=$((TARGET * 95 / 100))
+          echo "目标 $TARGET 只（fundrank），本次覆盖 $NEW 只，门槛 $NEED"
+          if [ "$NEW" -ge "$NEED" ]; then
+            echo "已达到 $NEED，一并发布 funddetail（旧文件里的未成立/清盘份额会被替换掉）"
             bash scripts/pushdata.sh fundmeta.json funddetail.json mgrmap.json
           else
-            echo "本次只有 $NEW < 现有 $OLD，只发布 fundmeta/mgrmap，不降级 funddetail"
+            echo "还差 $((NEED - NEW)) 只，只发布 fundmeta/mgrmap，funddetail 继续用现有数据"
             bash scripts/pushdata.sh fundmeta.json mgrmap.json
           fi
         env:
