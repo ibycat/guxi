@@ -76,7 +76,8 @@ export async function onRequest(context) {
 
   const u = new URL(request.url);
   const f = u.searchParams.get("f");
-  if (f !== "a" && f !== "hk" && f !== "fund") return jsonError("bad_f", 400);
+  const ALLOWED = ["a", "hk", "fund", "fundrank", "funddetail", "fundmgr", "mgrmap", "managers"];
+  if (ALLOWED.indexOf(f) < 0) return jsonError("bad_f", 400);
 
   // 客户端带版本号：快照格式一变就能整体失效旧缓存，不用等 5 分钟
   const ver = u.searchParams.get("v") || "1";

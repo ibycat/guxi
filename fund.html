@@ -9,7 +9,6 @@
   --bg:#F6F6F3; --panel:#FFFFFF; --ink:#17181A; --ink2:#5B6068; --ink3:#8B9099;
   --line:#E4E3DE; --line2:#EEEDE9; --chip:#F1F0EC;
   --red:#CE3A3A; --green:#12855A; --accent:#A8392C;
-  --warn-bg:#FBF0DC; --warn-ink:#8A5A0B;
   --r:10px;
 }
 *{box-sizing:border-box;}
@@ -20,38 +19,38 @@ body{
   font-size:13px; line-height:1.5; -webkit-font-smoothing:antialiased;
 }
 .num{font-variant-numeric:tabular-nums; font-feature-settings:"tnum";}
-.wrap{max-width:1280px; margin:0 auto; padding:0 20px 40px;}
-header{position:sticky; top:0; z-index:20; background:rgba(246,246,243,.94); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
-.hd{max-width:1280px; margin:0 auto; padding:14px 20px 10px; display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+.wrap{max-width:1440px; margin:0 auto; padding:0 20px 40px;}
+header{position:sticky; top:0; z-index:20; background:rgba(246,246,243,.95); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
+.hd{max-width:1440px; margin:0 auto; padding:14px 20px 10px; display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap;}
 .hd h1{font-size:17px; font-weight:600; margin:0; letter-spacing:-.2px;}
 .hd .sub{font-size:12px; color:var(--ink3); margin-top:3px;}
-.hd-right{display:flex; align-items:center; gap:10px;}
 .btn{appearance:none; border:1px solid var(--line); background:var(--panel); color:var(--ink); font-size:12px; padding:6px 12px; border-radius:7px; cursor:pointer; font-family:inherit; text-decoration:none; display:inline-block;}
 .btn:hover{border-color:#CFCEC8;}
-.help{font-size:11.5px; color:var(--ink3); padding:10px 14px 0;}
+.btn:disabled{opacity:.45; cursor:default;}
+.help{font-size:11.5px; color:var(--ink3); padding:10px 14px 0; line-height:1.7;}
 .help b{color:var(--ink2); font-weight:500;}
-.toolbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:12px 14px; border-bottom:1px solid var(--line2);}
-.toolbar input[type="search"]{width:190px; padding:6px 9px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink);}
-.toolbar select{padding:6px 8px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink);}
-.toolbar input[type="date"]{padding:5px 7px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink);}
-.rangebox{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink3);}
 .panel{background:var(--panel); border:1px solid var(--line); border-radius:var(--r); margin-top:14px; overflow:hidden;}
+.toolbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:11px 13px; border-bottom:1px solid var(--line2);}
+.toolbar + .toolbar{border-top:1px dashed var(--line2);}
+.toolbar input[type="search"]{width:170px; padding:6px 9px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink);}
+.toolbar input[type="text"],.toolbar input[type="number"],.toolbar input[type="date"]{padding:5px 7px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink);}
+.toolbar input[type="number"]{width:66px;}
+.toolbar select{padding:6px 8px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink); max-width:170px;}
+.lbl{font-size:11.5px; color:var(--ink3); margin-left:4px;}
+.rangebox{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink3);}
 .tblwrap{overflow-x:auto;}
 table{width:100%; border-collapse:collapse; font-size:12.5px;}
-thead th{
-  text-align:left; font-weight:500; color:var(--ink3); font-size:11.5px;
-  padding:9px 10px; border-bottom:1px solid var(--line); background:#FCFBF8;
-  white-space:nowrap; cursor:pointer; user-select:none;
-}
+thead th{text-align:left; font-weight:500; color:var(--ink3); font-size:11.5px; padding:9px 9px; border-bottom:1px solid var(--line); background:#FCFBF8; white-space:nowrap; cursor:pointer; user-select:none;}
 thead th.r{text-align:right;}
 thead th:hover{color:var(--ink);}
-tbody td{padding:8px 10px; border-bottom:1px solid var(--line2); white-space:nowrap;}
+tbody td{padding:8px 9px; border-bottom:1px solid var(--line2); white-space:nowrap;}
 tbody td.r{text-align:right;}
 tbody tr:hover{background:#FCFBF8;}
 .nm{font-weight:500;}
 .code{color:var(--ink3); font-size:11px; margin-left:6px;}
 .up{color:var(--red);} .down{color:var(--green);} .flat{color:var(--ink3);}
-.tag{display:inline-block; font-size:10.5px; padding:1.5px 6px; border-radius:4px; background:var(--chip); color:var(--ink3);}
+.tag{display:inline-block; font-size:10.5px; padding:1.5px 5px; border-radius:4px; background:var(--chip); color:var(--ink3); margin-left:5px;}
+.tag.one{background:#EAF3EE; color:#1F6B4A;}
 .pager{display:flex; align-items:center; justify-content:space-between; padding:9px 12px; font-size:12px; color:var(--ink2); flex-wrap:wrap; gap:8px;}
 .pgbtns{display:flex; gap:4px; align-items:center;}
 .pgbtn{min-width:26px; height:26px; padding:0 6px; border:1px solid var(--line); background:var(--panel); border-radius:6px; font-size:12px; color:var(--ink2); cursor:pointer; font-family:inherit;}
@@ -60,8 +59,8 @@ tbody tr:hover{background:#FCFBF8;}
 .skel{height:180px; display:flex; align-items:center; justify-content:center; color:var(--ink3); font-size:12.5px;}
 .error{margin:14px; padding:14px; border:1px solid #EBD3D0; background:#FDF6F5; border-radius:8px; color:#8C3A32; font-size:12.5px; line-height:1.7;}
 .note{margin-top:14px; font-size:11.5px; color:var(--ink3); line-height:1.8;}
-@media (max-width:720px){
-  .wrap{padding:0 12px 30px;} .hd{padding:12px 12px 8px;}
+@media (max-width:760px){
+  .wrap{padding:0 10px 30px;} .hd{padding:12px 12px 8px;}
   .toolbar input[type="search"]{width:100%;}
 }
 </style>
@@ -72,7 +71,7 @@ tbody tr:hover{background:#FCFBF8;}
   <div class="hd">
     <div>
       <h1>公募基金筛选器</h1>
-      <div class="sub" id="subline">正在读取基金快照…</div>
+      <div class="sub" id="subline">正在读取基金数据…</div>
     </div>
     <div class="hd-right">
       <a class="btn" href="/">← 股息率排行</a>
@@ -82,23 +81,38 @@ tbody tr:hover{background:#FCFBF8;}
 
 <div class="wrap">
   <div class="help">
-    <span>阶段涨幅均为复权口径；<b>规模为同一只基金全部份额（A/C/E/I/Y 等）合并后的金额</b>。当前版本先提供收益与基础信息，规模与基金经理在管规模作为第二批数据补入。</span>
+    规模为<b>同一只基金全部份额（A/C/E/I/Y 等）合并后的金额</b>，按基金全称归并；「在管规模」取该基金现任经理中最大的一位；「任职」为现任经理管理该基金的最长天数。
   </div>
 
   <div class="panel">
     <div class="toolbar">
-      <input type="search" id="q" placeholder="搜索基金名称 / 代码" autocomplete="off">
-      <select id="m">
-        <option value="">全部类型</option>
-        <option value="open">开放式（非货币）</option>
-        <option value="money">货币基金</option>
+      <input type="search" id="q" placeholder="名称 / 代码" autocomplete="off">
+      <select id="t"><option value="">全部类型</option></select>
+      <input type="text" id="theme" placeholder="主题/行业关键词" style="width:150px">
+      <span class="lbl">规模</span>
+      <input type="number" id="gsMin" placeholder="最小"><span class="lbl">~</span>
+      <input type="number" id="gsMax" placeholder="最大"><span class="lbl">亿</span>
+      <select id="mgr">
+        <option value="">单/多经理不限</option>
+        <option value="1">仅单基金经理</option>
+        <option value="2">仅多基金经理</option>
       </select>
-      <select id="y1">
-        <option value="0">近1年不限</option>
-        <option value="10">近1年 ≥ 10%</option>
-        <option value="20">近1年 ≥ 20%</option>
-        <option value="50">近1年 ≥ 50%</option>
-        <option value="-10">近1年 ≤ -10%</option>
+    </div>
+    <div class="toolbar">
+      <span class="lbl" style="margin-left:0">在管规模</span>
+      <input type="number" id="aMin" placeholder="最小"><span class="lbl">~</span>
+      <input type="number" id="aMax" placeholder="最大"><span class="lbl">亿</span>
+      <select id="tenure">
+        <option value="0">任职不限</option>
+        <option value="365">任职 ≥ 1 年</option>
+        <option value="1095">任职 ≥ 3 年</option>
+        <option value="1825">任职 ≥ 5 年</option>
+      </select>
+      <select id="exp">
+        <option value="0">经理年限不限</option>
+        <option value="1095">从业 ≥ 3 年</option>
+        <option value="1825">从业 ≥ 5 年</option>
+        <option value="3650">从业 ≥ 10 年</option>
       </select>
       <select id="ys">
         <option value="0">成立年限不限</option>
@@ -107,34 +121,35 @@ tbody tr:hover{background:#FCFBF8;}
         <option value="5">成立 ≥ 5 年</option>
         <option value="10">成立 ≥ 10 年</option>
       </select>
-      <span class="rangebox">
+      <span class="rangebox" style="margin-left:auto">
         区间
         <input type="date" id="sd">
         <span>→</span>
         <input type="date" id="ed">
         <button class="btn" id="applyRange">应用</button>
       </span>
-      <button class="btn" id="csvBtn" style="margin-left:auto">导出 CSV</button>
+      <button class="btn" id="csvBtn">导出 CSV</button>
     </div>
 
     <div class="tblwrap">
       <table id="tbl">
         <thead>
           <tr>
-            <th style="width:34px">#</th>
+            <th style="width:32px">#</th>
             <th data-sort="n">基金名称 / 代码</th>
-            <th class="r" data-sort="nav">单位净值</th>
-            <th class="r" data-sort="chg">日涨跌</th>
+            <th class="r" data-sort="gs">合并规模</th>
+            <th class="r" data-sort="gn">份额</th>
+            <th data-sort="jj">基金经理</th>
+            <th class="r" data-sort="a">在管规模</th>
+            <th class="r" data-sort="d">任职</th>
             <th class="r" data-sort="y1">近1年</th>
             <th class="r" data-sort="y3">近3年</th>
-            <th class="r" id="thRange" data-sort="rc" style="display:none">区间收益</th>
             <th class="r" data-sort="ytd">今年来</th>
-            <th class="r" data-sort="since">成立来</th>
+            <th class="r" id="thRange" data-sort="rc" style="display:none">区间收益</th>
             <th class="r" data-sort="est">成立日</th>
-            <th class="r" data-sort="fee">手续费</th>
           </tr>
         </thead>
-        <tbody id="tbody"><tr><td colspan="11"><div class="skel">数据加载中…</div></td></tr></tbody>
+        <tbody id="tbody"><tr><td colspan="12"><div class="skel">数据加载中…</div></td></tr></tbody>
       </table>
     </div>
     <div class="pager">
@@ -144,8 +159,8 @@ tbody tr:hover{background:#FCFBF8;}
   </div>
 
   <div class="note">
-    数据来源：天天基金公开排行接口，每日快照一次。<br>
-    本页面仅作数据工具，不构成投资建议。
+    数据来源：收益与规模来自排行接口，全称/经理/成立日来自基金详情接口，任职与在管规模来自基金经理档案；均为每日快照。<br>
+    规模与任职为最近一期季报口径。本页仅作数据工具，不构成投资建议。
   </div>
 </div>
 
@@ -153,87 +168,171 @@ tbody tr:hover{background:#FCFBF8;}
 (function(){
   "use strict";
 
-  var S = { rows: [], sortKey: "y1", sortDir: -1, page: 1, size: 50, q: "", m: "", y1: 0, ys: 0, range: null };
+  var S = {
+    rows: [], sortKey: "y1", sortDir: -1, page: 1, size: 50,
+    q: "", t: "", theme: "", mgr: "", tenure: 0, exp: 0, ys: 0,
+    gsMin: null, gsMax: null, aMin: null, aMax: null,
+    range: null
+  };
 
   var $ = function(id){ return document.getElementById(id); };
-
-  function num(v){ return typeof v === "number" && isFinite(v) ? v : NaN; }
-
-  function pct(v, d){
-    if (!isFinite(v)) return "—";
-    return v.toFixed(d == null ? 2 : d) + "%";
-  }
+  var isNum = function(v){ return typeof v === "number" && isFinite(v); };
+  var num = function(v){ var x = parseFloat(v); return isFinite(x) ? x : NaN; };
 
   function signed(v){
-    if (!isFinite(v)) return "—";
+    if (!isNum(v)) return "—";
     return (v > 0 ? "+" : "") + v.toFixed(2) + "%";
   }
-
   function cls(v){
-    if (!isFinite(v) || v === 0) return "flat";
+    if (!isNum(v) || v === 0) return "flat";
     return v > 0 ? "up" : "down";
   }
-
-  function yearsSince(est){
+  function yi(v){
+    if (!isNum(v)) return "—";
+    return v >= 100 ? v.toFixed(0) : v.toFixed(2);
+  }
+  function yearsOf(est){
     if (!est) return NaN;
     var d = new Date(est + "T00:00:00");
     if (isNaN(d)) return NaN;
     return (Date.now() - d.getTime()) / (365 * 24 * 3600 * 1000);
   }
+  function fmtDays(d){
+    if (!isNum(d) || d <= 0) return "—";
+    var y = Math.floor(d / 365), m = Math.floor((d % 365) / 30);
+    if (y > 0) return y + "年" + (m > 0 ? m + "月" : "");
+    return m > 0 ? m + "月" : d + "天";
+  }
+
+  function get(f){
+    return fetch("/api/snap?f=" + f + "&v=2", { cache: "no-store" })
+      .then(function(r){ if (!r.ok) throw new Error(f + "_" + r.status); return r.json(); });
+  }
 
   function load(){
-    fetch("/api/snap?f=fund&v=2", { cache: "no-store" })
-      .then(function(r){
-        if (!r.ok) throw new Error("snap_" + r.status);
-        return r.json();
-      })
-      .then(function(pack){
-        var rows = (pack && pack.rows) || [];
-        if (!rows.length) throw new Error("snap_empty");
-        S.rows = rows;
-        $("subline").textContent = "共 " + rows.length.toLocaleString() + " 只基金 · 净值日期 " + (pack.asof || "—");
-        renderAll();
-      })
-      .catch(function(err){
-        $("subline").textContent = "基金数据暂时取不到";
-        $("tbody").innerHTML = '<tr><td colspan="11"><div class="error">基金快照还没生成（' +
-          (err && err.message ? err.message : "未知错误") +
-          "）。<br>首次运行 GitHub Actions 的 fund-snapshot 工作流后即可看到数据。</div></td></tr>";
+    $("subline").textContent = "正在读取基金数据（合计约 10MB，首次稍慢）…";
+    Promise.all([
+      get("fundrank").catch(function(){ return { rows: [] }; }),
+      get("funddetail").catch(function(){ return { rows: [] }; }),
+      get("fundmgr").catch(function(){ return { rows: {} }; }),
+      get("managers").catch(function(){ return { rows: [] }; }),
+      get("mgrmap").catch(function(){ return { rows: [] }; })
+    ]).then(function(res){
+      var rank = res[0], detail = res[1], mgr = res[2], managers = res[3], map = res[4];
+
+      var nameToId = (map && map.map) || {};
+      var expById = {};
+      var mrows = (managers && managers.rows) || [];
+      for (var i = 0; i < mrows.length; i++){
+        var m = mrows[i];
+        if (m && m.id && isNum(m.y)) expById[m.id] = m.y;
+      }
+
+      var byDetail = {}, dRows = (detail && detail.rows) || [];
+      for (var d = 0; d < dRows.length; d++){
+        if (dRows[d] && dRows[d].c) byDetail[dRows[d].c] = dRows[d];
+      }
+      var byMgr = {};
+      var mrRows = (mgr && mgr.rows) || {};
+      for (var k in mrRows) if (Object.prototype.hasOwnProperty.call(mrRows, k)) byMgr[k] = mrRows[k];
+
+      var rows = [];
+      var src = (rank && rank.rows && rank.rows.length) ? rank.rows : dRows;
+      for (var j = 0; j < src.length; j++){
+        var r = src[j];
+        if (!r || !r.c) continue;
+        var det = byDetail[r.c] || {};
+        var mm = byMgr[r.c] || {};
+        var jjName = det.jj || "";
+        var first = jjName ? jjName.split(/[、,，;；]/)[0] : "";
+        var mid = first ? nameToId[first] : "";
+        rows.push({
+          c: r.c,
+          n: det.nm || r.n || "",
+          t: det.t || r.t || "",
+          full: det.full || "",
+          nav: isNum(r.nav) ? r.nav : null,
+          chg: isNum(r.chg) ? r.chg : null,
+          y1: isNum(r.y1) ? r.y1 : null,
+          y3: isNum(r.y3) ? r.y3 : null,
+          ytd: isNum(r.ytd) ? r.ytd : null,
+          since: isNum(r.since) ? r.since : null,
+          s: isNum(det.s) ? det.s : null,
+          gs: isNum(det.gs) ? det.gs : null,
+          gn: isNum(det.gn) ? det.gn : null,
+          est: det.est || "",
+          jj: jjName,
+          jjn: isNum(det.jjn) ? det.jjn : 0,
+          bench: det.bench || "",
+          idx: det.idx || "",
+          d: isNum(mm.d) ? mm.d : null,
+          a: isNum(mm.a) ? mm.a : null,
+          exp: mid && isNum(expById[mid]) ? expById[mid] : null
+        });
+      }
+
+      if (!rows.length) throw new Error("数据为空");
+      S.rows = rows;
+
+      var types = {};
+      for (var z = 0; z < rows.length; z++) if (rows[z].t) types[rows[z].t] = (types[rows[z].t] || 0) + 1;
+      var opt = '<option value="">全部类型</option>';
+      Object.keys(types).sort(function(a, b){ return types[b] - types[a]; }).forEach(function(tt){
+        opt += '<option value="' + tt + '">' + tt + "（" + types[tt] + "）</option>";
       });
+      $("t").innerHTML = opt;
+
+      var wS = rows.filter(function(x){ return isNum(x.gs); }).length;
+      var wA = rows.filter(function(x){ return isNum(x.a); }).length;
+      $("subline").textContent = "共 " + rows.length.toLocaleString() + " 只 · 有规模 " +
+        wS.toLocaleString() + " · 有经理数据 " + wA.toLocaleString();
+      renderTable();
+    }).catch(function(err){
+      $("subline").textContent = "基金数据暂时取不到";
+      $("tbody").innerHTML = '<tr><td colspan="12"><div class="error">数据加载失败：' +
+        (err && err.message ? err.message : "未知错误") + "</div></td></tr>";
+    });
   }
 
   function filtered(){
     var q = S.q.trim().toLowerCase();
+    var th = S.theme.trim().toLowerCase();
     var out = [];
     for (var i = 0; i < S.rows.length; i++){
       var r = S.rows[i];
-      if (S.m && r.m !== S.m) continue;
-      if (S.y1 > 0 && !(num(r.y1) >= S.y1)) continue;
-      if (S.y1 < 0 && !(num(r.y1) <= S.y1)) continue;
-      if (S.ys > 0){
-        var y = yearsSince(r.est);
-        if (!(y >= S.ys)) continue;
-      }
+      if (S.t && r.t !== S.t) continue;
+      if (S.mgr === "1" && r.jjn !== 1) continue;
+      if (S.mgr === "2" && !(r.jjn > 1)) continue;
+      if (S.gsMin != null && !(isNum(r.gs) && r.gs >= S.gsMin)) continue;
+      if (S.gsMax != null && !(isNum(r.gs) && r.gs <= S.gsMax)) continue;
+      if (S.aMin != null && !(isNum(r.a) && r.a >= S.aMin)) continue;
+      if (S.aMax != null && !(isNum(r.a) && r.a <= S.aMax)) continue;
+      if (S.tenure > 0 && !(isNum(r.d) && r.d >= S.tenure)) continue;
+      if (S.exp > 0 && !(isNum(r.exp) && r.exp >= S.exp)) continue;
+      if (S.ys > 0){ var y = yearsOf(r.est); if (!(y >= S.ys)) continue; }
       if (q && r.n.toLowerCase().indexOf(q) < 0 && r.c.indexOf(q) < 0) continue;
+      if (th){
+        var hay = (r.n + " " + r.idx + " " + r.bench + " " + r.t).toLowerCase();
+        if (hay.indexOf(th) < 0) continue;
+      }
       out.push(r);
     }
+
     var key = S.sortKey, dir = S.sortDir;
     out.sort(function(a, b){
       var va, vb;
       if (key === "rc"){
-        // 自定义区间收益：没有匹配到的排在最后
-        va = S.range && typeof S.range.map[a.c] === "number" ? S.range.map[a.c] : -Infinity;
-        vb = S.range && typeof S.range.map[b.c] === "number" ? S.range.map[b.c] : -Infinity;
+        va = S.range && isNum(S.range.map[a.c]) ? S.range.map[a.c] : -Infinity;
+        vb = S.range && isNum(S.range.map[b.c]) ? S.range.map[b.c] : -Infinity;
         return (va - vb) * dir;
       }
-      if (key === "n" || key === "est" || key === "fee"){
+      if (key === "n" || key === "jj" || key === "est"){
         va = a[key] == null ? "" : String(a[key]);
         vb = b[key] == null ? "" : String(b[key]);
         return va < vb ? -dir : (va > vb ? dir : 0);
       }
-      va = num(a[key]); vb = num(b[key]);
-      if (!isFinite(va)) va = -Infinity;
-      if (!isFinite(vb)) vb = -Infinity;
+      va = isNum(a[key]) ? a[key] : -Infinity;
+      vb = isNum(b[key]) ? b[key] : -Infinity;
       return (va - vb) * dir;
     });
     return out;
@@ -248,30 +347,27 @@ tbody tr:hover{background:#FCFBF8;}
     var slice = list.slice(start, start + S.size);
 
     if (!total){
-      $("tbody").innerHTML = '<tr><td colspan="11"><div class="skel">没有符合条件的基金，试着放宽筛选</div></td></tr>';
+      $("tbody").innerHTML = '<tr><td colspan="12"><div class="skel">没有符合条件的基金，试着放宽筛选</div></td></tr>';
     } else {
       var html = "";
       for (var i = 0; i < slice.length; i++){
         var r = slice[i];
-        var c = r.m === "money" ? num(r.y7) : num(r.chg);
-        var y1v = r.m === "money" ? num(r.y7) : num(r.y1);
+        var rc = S.range ? S.range.map[r.c] : null;
         html += "<tr>" +
           '<td class="num">' + (start + i + 1) + "</td>" +
           '<td><span class="nm">' + r.n + '</span><span class="code num">' + r.c + "</span>" +
-            (r.m === "money" ? '<span class="tag" style="margin-left:6px">货币</span>' : "") + "</td>" +
-          '<td class="r num">' + (r.m === "money" ? "—" : (isFinite(num(r.nav)) ? num(r.nav).toFixed(4) : "—")) + "</td>" +
-          '<td class="r num ' + cls(c) + '">' + (r.m === "money" ? pct(num(r.y7)) : signed(num(r.chg))) + "</td>" +
-          '<td class="r num ' + cls(y1v) + '">' + (r.m === "money" ? "—" : signed(num(r.y1))) + "</td>" +
-          '<td class="r num ' + cls(num(r.y3)) + '">' + (r.m === "money" ? "—" : signed(num(r.y3))) + "</td>" +
-          (S.range ? (function(){
-            var rc = S.range.map[r.c];
-            var rv = typeof rc === "number" ? rc : NaN;
-            return '<td class="r num ' + cls(rv) + '">' + signed(rv) + "</td>";
-          })() : "") +
-          '<td class="r num ' + cls(num(r.ytd)) + '">' + (r.m === "money" ? "—" : signed(num(r.ytd))) + "</td>" +
-          '<td class="r num ' + cls(num(r.since)) + '">' + (r.m === "money" ? "—" : signed(num(r.since))) + "</td>" +
+            (r.gn > 1 ? '<span class="tag">' + r.gn + "份</span>" : "") +
+            (r.jjn === 1 ? '<span class="tag one">单人</span>' : "") + "</td>" +
+          '<td class="r num">' + (isNum(r.gs) ? yi(r.gs) + "亿" : "—") + "</td>" +
+          '<td class="r num">' + (r.gn || "—") + "</td>" +
+          '<td class="num">' + (r.jj || "—") + "</td>" +
+          '<td class="r num">' + (isNum(r.a) ? yi(r.a) + "亿" : "—") + "</td>" +
+          '<td class="r num">' + fmtDays(r.d) + "</td>" +
+          '<td class="r num ' + cls(r.y1) + '">' + signed(r.y1) + "</td>" +
+          '<td class="r num ' + cls(r.y3) + '">' + signed(r.y3) + "</td>" +
+          '<td class="r num ' + cls(r.ytd) + '">' + signed(r.ytd) + "</td>" +
+          (S.range ? '<td class="r num ' + cls(num(rc)) + '">' + signed(num(rc)) + "</td>" : "") +
           '<td class="r num">' + (r.est || "—") + "</td>" +
-          '<td class="r num">' + (r.fee || "—") + "</td>" +
           "</tr>";
       }
       $("tbody").innerHTML = html;
@@ -292,39 +388,7 @@ tbody tr:hover{background:#FCFBF8;}
     $("pgbtns").innerHTML = btns;
   }
 
-  function renderAll(){ renderTable(); }
-
-  function exportCsv(){
-    var list = filtered();
-    var head = ["排名","代码","名称","类型","单位净值","日涨跌","近1年","近3年","今年来","成立来","成立日","手续费"];
-    var lines = [head.join(",")];
-    for (var i = 0; i < list.length; i++){
-      var r = list[i];
-      lines.push([
-        i + 1, r.c, '"' + String(r.n).replace(/"/g, '""') + '"',
-        r.m === "money" ? "货币" : "开放式",
-        r.m === "money" ? "" : (r.nav == null ? "" : r.nav),
-        r.m === "money" ? (r.y7 == null ? "" : r.y7) : (r.chg == null ? "" : r.chg),
-        r.y1 == null ? "" : r.y1,
-        r.y3 == null ? "" : r.y3,
-        r.ytd == null ? "" : r.ytd,
-        r.since == null ? "" : r.since,
-        r.est || "",
-        '"' + (r.fee || "") + '"'
-      ].join(","));
-    }
-    var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "公募基金筛选.csv";
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  }
-
-  // 自定义区间收益：排行接口本身支持 sd/ed，一次能返回全市场，
-  // 但单页有上限，所以按 allRecords 分页拉完再合并。
-  // 第 19 列（下标 18）就是「自定义区间涨幅」——这也是之前 fee 取错列的原因。
+  // 自定义区间：排行接口本身支持 sd/ed，按 allRecords 分页拉全市场
   function loadRange(sd, ed){
     if (!sd || !ed){ $("subline").textContent = "请先选择起止日期"; return; }
     if (sd >= ed){ $("subline").textContent = "结束日期要晚于开始日期"; return; }
@@ -334,17 +398,13 @@ tbody tr:hover{background:#FCFBF8;}
     $("subline").textContent = "正在拉取 " + sd + " → " + ed + " 区间收益…";
 
     var map = {}, got = 0, total = Infinity, pi = 1;
-
     function step(){
       if (got >= total || pi > 8) return Promise.resolve();
       var q = "op=ph&dt=kf&ft=all&rs=&gs=0&sc=1nzf&st=desc&sd=" + sd + "&ed=" + ed +
               "&qdii=&tabSubtype=,,,,,&pi=" + pi + "&pn=5000&dx=1";
       var target = "fund.eastmoney.com/data/rankhandler.aspx?" + q;
       return fetch("/api/em?u=" + encodeURIComponent(target), { cache: "no-store" })
-        .then(function(r){
-          if (!r.ok) throw new Error("proxy_" + r.status);
-          return r.text();
-        })
+        .then(function(r){ if (!r.ok) throw new Error("proxy_" + r.status); return r.text(); })
         .then(function(text){
           var m = text.match(/datas:\[(.*?)\],allRecords:(\d+)/s);
           if (!m) throw new Error("bad_shape");
@@ -358,35 +418,64 @@ tbody tr:hover{background:#FCFBF8;}
           }
           got += arr.length;
           pi++;
-          $("subline").textContent = "正在拉取区间收益 " + got + " / " + (total || "?") + " 只…";
+          $("subline").textContent = "区间收益 " + got + " / " + (total || "?") + " 只…";
           return step();
         });
     }
 
     step().then(function(){
       S.range = { sd: sd, ed: ed, map: map };
-      S.sortKey = "rc";
-      S.sortDir = -1;
-      S.page = 1;
+      S.sortKey = "rc"; S.sortDir = -1; S.page = 1;
       $("thRange").style.display = "";
-      $("subline").textContent = "区间 " + sd + " → " + ed + " · 已匹配 " +
-        Object.keys(map).length.toLocaleString() + " 只";
+      $("subline").textContent = "区间 " + sd + " → " + ed + " · 匹配 " + Object.keys(map).length.toLocaleString() + " 只";
       renderTable();
     }).catch(function(err){
       $("subline").textContent = "区间收益拉取失败：" + (err && err.message ? err.message : "未知错误");
-    }).then(function(){
-      btn.disabled = false;
+    }).then(function(){ btn.disabled = false; });
+  }
+
+  function exportCsv(){
+    var list = filtered();
+    var head = ["排名","代码","名称","类型","合并规模(亿)","份额数","基金经理","在管规模(亿)","任职天数","近1年","近3年","今年来","成立日","基金全称"];
+    var lines = [head.join(",")];
+    for (var i = 0; i < list.length; i++){
+      var r = list[i];
+      lines.push([
+        i + 1, r.c, '"' + String(r.n).replace(/"/g, '""') + '"', r.t,
+        r.gs == null ? "" : r.gs, r.gn || "", '"' + (r.jj || "") + '"',
+        r.a == null ? "" : r.a, r.d == null ? "" : r.d,
+        r.y1 == null ? "" : r.y1, r.y3 == null ? "" : r.y3, r.ytd == null ? "" : r.ytd,
+        r.est || "", '"' + String(r.full).replace(/"/g, '""') + '"'
+      ].join(","));
+    }
+    var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "公募基金筛选.csv";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  function bindNum(id, key){
+    $(id).addEventListener("input", function(e){
+      var v = parseFloat(e.target.value);
+      S[key] = isFinite(v) ? v : null;
+      S.page = 1; renderTable();
     });
   }
 
   function bind(){
-    $("applyRange").addEventListener("click", function(){
-      loadRange($("sd").value, $("ed").value);
-    });
     $("q").addEventListener("input", function(e){ S.q = e.target.value; S.page = 1; renderTable(); });
-    $("m").addEventListener("change", function(e){ S.m = e.target.value; S.page = 1; renderTable(); });
-    $("y1").addEventListener("change", function(e){ S.y1 = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
+    $("theme").addEventListener("input", function(e){ S.theme = e.target.value; S.page = 1; renderTable(); });
+    $("t").addEventListener("change", function(e){ S.t = e.target.value; S.page = 1; renderTable(); });
+    $("mgr").addEventListener("change", function(e){ S.mgr = e.target.value; S.page = 1; renderTable(); });
+    $("tenure").addEventListener("change", function(e){ S.tenure = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
+    $("exp").addEventListener("change", function(e){ S.exp = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
     $("ys").addEventListener("change", function(e){ S.ys = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
+    bindNum("gsMin", "gsMin"); bindNum("gsMax", "gsMax");
+    bindNum("aMin", "aMin"); bindNum("aMax", "aMax");
+    $("applyRange").addEventListener("click", function(){ loadRange($("sd").value, $("ed").value); });
     $("csvBtn").addEventListener("click", exportCsv);
 
     document.querySelector("thead").addEventListener("click", function(e){
@@ -394,9 +483,8 @@ tbody tr:hover{background:#FCFBF8;}
       if (!th) return;
       var key = th.getAttribute("data-sort");
       if (S.sortKey === key) S.sortDir = -S.sortDir;
-      else { S.sortKey = key; S.sortDir = (key === "n" || key === "est" || key === "fee") ? 1 : -1; }
-      S.page = 1;
-      renderTable();
+      else { S.sortKey = key; S.sortDir = (key === "n" || key === "jj" || key === "est") ? 1 : -1; }
+      S.page = 1; renderTable();
     });
 
     $("pgbtns").addEventListener("click", function(e){
@@ -408,9 +496,8 @@ tbody tr:hover{background:#FCFBF8;}
     });
   }
 
-  // 默认区间：近一年
   (function(){
-    var z = function(n){ return n < 10 ? "0" + n : "" + n; };
+    var z = function(v){ return v < 10 ? "0" + v : "" + v; };
     var fmt = function(d){ return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate()); };
     var t = new Date();
     $("ed").value = fmt(t);
