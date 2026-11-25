@@ -170,8 +170,11 @@ function loadExisting() {
     const m = new Map();
     for (const r of d.rows || []) {
       if (r && r.c && !r.err) {
-        // 老记录没有抓取时间，按 0 处理 —— 滚动刷新时它们排在队首，最先被更新
-        if (!r.t) r.t = 0;
+        // u = 最近抓取时间。老记录没有就按 0，滚动刷新时排最前，最先被更新
+        if (!r.u) r.u = 0;
+        // 兼容历史错误：上一版把时间戳写进了 t，把「基金类型」覆盖成了数字。
+        // 这里清空类型并给最低优先级，让它们优先被重抓复原。
+        if (typeof r.t === "number") { r.t = ""; r.u = -1; }
         m.set(r.c, r);
       }
     }
@@ -199,7 +202,7 @@ async function main() {
     const chosen = new Set(codes);
     refreshCodes = Array.from(done.values())
       .filter((r) => !chosen.has(r.c))
-      .sort((a, b) => (a.t || 0) - (b.t || 0))
+      .sort((a, b) => (a.u || 0) - (b.u || 0))
       .slice(0, refreshN)
       .map((r) => r.c);
     codes = codes.concat(refreshCodes);
@@ -219,7 +222,8 @@ async function main() {
       const code = codes[idx++];
       const rec = await fetchCode(code);
       n++;
-      if (!rec.err) { ok++; rec.t = Date.now(); }
+      // 注意：行里的 t 是「基金类型」，时间戳必须用另一个字段，否则会把类型覆盖掉
+      if (!rec.err) { ok++; rec.u = Date.now(); }
       rows.push(rec);
       if (n % 25 === 0 || n === codes.length) {
         console.log("  进度 " + n + "/" + codes.length + "，成功 " + ok);
