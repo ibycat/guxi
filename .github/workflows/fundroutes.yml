@@ -1,0 +1,42 @@
+name: fundroutes
+
+# 一次性：探测第三方 API 的全部路由（找有没有批量经理接口）。
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/fundroutes.mjs"
+      - ".github/workflows/fundroutes.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 探测路由
+        env:
+          SNAPSHOT_DIR: out
+        run: |
+          mkdir -p out
+          node scripts/fundroutes.mjs
+
+      - name: 推送产物
+        run: bash scripts/pushdata.sh apiroutes.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
