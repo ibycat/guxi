@@ -95,7 +95,7 @@ jobs:
         run: |
           set -e
           OLD=$(cat old_detail.txt)
-          NEW=$(node -e "console.log((require('./out/funddetail.json').rows||[]).length")
+          NEW=$(node -e "console.log((require('./out/funddetail.json').rows||[]).length)")
           if [ "$NEW" -ge "$OLD" ]; then
             echo "funddetail 覆盖 $NEW >= 现有 $OLD，一并发布"
             bash scripts/pushdata.sh fundmeta.json funddetail.json mgrmap.json
