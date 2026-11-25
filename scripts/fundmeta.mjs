@@ -300,6 +300,22 @@ async function main() {
       rows: det
     })
   );
+  // mgrmap 必须增量合并：本批只覆盖几千只基金，直接覆盖会把之前批次
+  // 带来的经理丢掉，fundmgr 就会变少。以旧文件为底，新的补进去。
+  try {
+    const p = path.join(OUT_DIR, "mgrmap.json");
+    if (fs.existsSync(p)) {
+      const old = JSON.parse(fs.readFileSync(p, "utf8"));
+      for (const r of old.rows || []) {
+        if (!r || !r.n || !r.id) continue;
+        if (!mgrMap[r.n]) {
+          mgrMap[r.n] = r.id;
+          mgrRows.push(r);
+        }
+      }
+    }
+  } catch (e) { /* 旧文件坏了就从零开始 */ }
+
   fs.writeFileSync(
     path.join(OUT_DIR, "mgrmap.json"),
     JSON.stringify({
