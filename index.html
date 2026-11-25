@@ -290,7 +290,10 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   var HISTORY_YEARS = 6;
   var HK_BUNDLE_V = 2; // 改动港股聚合接口响应格式时递增，可整体失效边缘缓存
   var CACHE_KEY = "asdiv_cache_v3";
-  var CACHE_TTL = 12 * 3600 * 1000;
+  // 本地缓存是「先画再更新」用的，不需要太短的时效：boot() 会在后台拉最新快照替换。
+  // 原来 12 小时，隔天早上第一打开必然走冷启动；放到 48 小时，
+  // 过了窗口也有 staleBar 提示数据几天没更新，不会让人误当当天行情。
+  var CACHE_TTL = 48 * 3600 * 1000;
 
   var TODAY = new Date(); TODAY.setHours(0,0,0,0);
   var DAY = 86400000;
@@ -937,7 +940,9 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   }
 
   function getJson(url){
-    return fetch(url, { cache: "no-store" })
+    // 用默认缓存策略：快照 URL 里的 t 参数是 10 分钟粒度，
+    // 同一窗口内重复打开页面可以直接命中浏览器缓存，不用再下 1.5MB。
+    return fetch(url, { cache: "default" })
       .then(function(r){
         if (!r.ok) throw new Error("snap_" + r.status);
         return r.json();
