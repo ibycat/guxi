@@ -17,6 +17,11 @@ on:
     # 每天 02:20 UTC（北京 10:20），排在 fundrank 之后
     - cron: "20 2 * * *"
   workflow_dispatch:
+  # 只在自己代码变动时触发，用于验证解析没坏；日常靠上面的 cron 分批补齐
+  push:
+    paths:
+      - "scripts/fundmeta.mjs"
+      - ".github/workflows/fundmeta.yml"
 
 permissions:
   contents: write
@@ -90,7 +95,7 @@ jobs:
         run: |
           set -e
           OLD=$(cat old_detail.txt)
-          NEW=$(node -e "console.log((require('./out/funddetail.json').rows||[]).length)")
+          NEW=$(node -e "console.log((require('./out/funddetail.json').rows||[]).length")
           if [ "$NEW" -ge "$OLD" ]; then
             echo "funddetail 覆盖 $NEW >= 现有 $OLD，一并发布"
             bash scripts/pushdata.sh fundmeta.json funddetail.json mgrmap.json
