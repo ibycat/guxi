@@ -13,6 +13,7 @@
 //   node scripts/fundmeta.mjs --limit 0       全量
 // 产物：fundmeta.json（含每只基金的自身规模 s、同全称合并后的 gs）
 // 分批策略：每批 6000 只、脚本自带增量续跑、覆盖到 fundrank 的 95% 才替换 funddetail（由工作流推送步骤把关）
+// 收尾批次：剩余约 2900 只，跑完即由东财接管 funddetail（本条注释用于触发本轮工作流）
 
 import fs from "node:fs";
 import path from "node:path";
