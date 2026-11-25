@@ -43,8 +43,10 @@ async function searchMgr(name) {
         signal: AbortSignal.timeout(20000)
       });
       if (!res.ok) { await sleep(400 * (i + 1)); continue; }
-      const arr = await res.json();
-      if (!Array.isArray(arr)) { await sleep(400 * (i + 1)); continue; }
+      // 接口返回形状变过：早期是裸数组，现在是 {ErrCode, ErrMsg, Datas:[...]}
+      const json = await res.json();
+      const arr = Array.isArray(json) ? json : (json && Array.isArray(json.Datas) ? json.Datas : null);
+      if (!arr) { await sleep(400 * (i + 1)); continue; }
 
       const exact = arr.filter((x) => cleanName(x.MgrName) === name);
       const pool = exact.length ? exact : arr;
