@@ -100,7 +100,7 @@ tbody tr:hover{background:#FCFBF8;}
         <option value="1">仅单基金经理</option>
         <option value="2">仅多基金经理</option>
       </select>
-      <label class="chk"><input type="checkbox" id="hideNew"> 隐藏未成立</label>
+      <label class="chk"><input type="checkbox" id="hideBad" checked> 隐藏无净值/未成立</label>
     </div>
     <div class="toolbar">
       <span class="lbl" style="margin-left:0">在管规模</span>
@@ -164,6 +164,7 @@ tbody tr:hover{background:#FCFBF8;}
 
   <div class="note">
     数据来源：收益与规模来自排行接口，全称/经理/成立日来自基金详情接口，任职与在管规模来自基金经理档案；均为每日快照。<br>
+    「无净值」指该份额已无最新净值（多为已终止或份额折算过的老份额），其阶段收益是历史残值，不参与展示与排序。<br>
     规模与任职为最近一期季报口径。本页仅作数据工具，不构成投资建议。
   </div>
 </div>
@@ -174,7 +175,7 @@ tbody tr:hover{background:#FCFBF8;}
 
   var S = {
     rows: [], sortKey: "y1", sortDir: -1, page: 1, size: 50,
-    q: "", t: "", theme: "", mgr: "", tenure: 0, exp: 0, ys: 0, hideNew: false,
+    q: "", t: "", theme: "", mgr: "", tenure: 0, exp: 0, ys: 0, hideBad: true,
     gsMin: null, gsMax: null, aMin: null, aMax: null,
     range: null
   };
@@ -273,6 +274,9 @@ tbody tr:hover{background:#FCFBF8;}
           a: isNum(mm.a) ? mm.a : null,
           // 没有成立日的都是还没成立的新发基金，源站没有规模/类型
           nf: !det.est,
+          // 没有最新净值的多是已终止/已折算的份额，它的阶段收益是历史残值，
+          // 比如 960033 净值序列停在 2020-05-26，近一年却显示 304%
+          dead: r.nav == null,
           exp: mid && isNum(expById[mid]) ? expById[mid] : null
         });
       }
@@ -291,9 +295,10 @@ tbody tr:hover{background:#FCFBF8;}
       var wS = rows.filter(function(x){ return isNum(x.gs); }).length;
       var wA = rows.filter(function(x){ return isNum(x.a); }).length;
       var nf = rows.filter(function(x){ return x.nf; }).length;
+      var dead = rows.filter(function(x){ return x.dead; }).length;
       $("subline").textContent = "共 " + rows.length.toLocaleString() + " 只 · 有规模 " +
         wS.toLocaleString() + " · 有经理数据 " + wA.toLocaleString() +
-        " · 未成立 " + nf.toLocaleString();
+        " · 无净值 " + dead.toLocaleString() + " · 未成立 " + nf.toLocaleString();
       renderTable();
     }).catch(function(err){
       $("subline").textContent = "基金数据暂时取不到";
@@ -309,7 +314,7 @@ tbody tr:hover{background:#FCFBF8;}
     for (var i = 0; i < S.rows.length; i++){
       var r = S.rows[i];
       if (S.t && r.t !== S.t) continue;
-      if (S.hideNew && r.nf) continue;
+      if (S.hideBad && (r.nf || r.dead)) continue;
       if (S.mgr === "1" && r.jjn !== 1) continue;
       if (S.mgr === "2" && !(r.jjn > 1)) continue;
       if (S.gsMin != null && !(isNum(r.gs) && r.gs >= S.gsMin)) continue;
@@ -367,15 +372,16 @@ tbody tr:hover{background:#FCFBF8;}
           '<td><span class="nm">' + r.n + '</span><span class="code num">' + r.c + "</span>" +
             (r.gn > 1 ? '<span class="tag">' + r.gn + "份</span>" : "") +
             (r.jjn === 1 ? '<span class="tag one">单人</span>' : "") +
-            (r.nf ? '<span class="tag new">未成立</span>' : "") + "</td>" +
+            (r.nf ? '<span class="tag new">未成立</span>' : "") +
+            (r.dead ? '<span class="tag new">无净值</span>' : "") + "</td>" +
           '<td class="r num">' + (isNum(r.gs) ? yi(r.gs) + "亿" : "—") + "</td>" +
           '<td class="r num">' + (r.gn || "—") + "</td>" +
           '<td class="num">' + (r.jj || "—") + "</td>" +
           '<td class="r num">' + (isNum(r.a) ? yi(r.a) + "亿" : "—") + "</td>" +
           '<td class="r num">' + fmtDays(r.d) + "</td>" +
-          '<td class="r num ' + cls(r.y1) + '">' + signed(r.y1) + "</td>" +
-          '<td class="r num ' + cls(r.y3) + '">' + signed(r.y3) + "</td>" +
-          '<td class="r num ' + cls(r.ytd) + '">' + signed(r.ytd) + "</td>" +
+          '<td class="r num ' + (r.dead ? "flat" : cls(r.y1)) + '">' + (r.dead ? "—" : signed(r.y1)) + "</td>" +
+          '<td class="r num ' + (r.dead ? "flat" : cls(r.y3)) + '">' + (r.dead ? "—" : signed(r.y3)) + "</td>" +
+          '<td class="r num ' + (r.dead ? "flat" : cls(r.ytd)) + '">' + (r.dead ? "—" : signed(r.ytd)) + "</td>" +
           (S.range ? '<td class="r num ' + cls(num(rc)) + '">' + signed(num(rc)) + "</td>" : "") +
           '<td class="r num">' + (r.est || "—") + "</td>" +
           "</tr>";
@@ -480,7 +486,7 @@ tbody tr:hover{background:#FCFBF8;}
     $("theme").addEventListener("input", function(e){ S.theme = e.target.value; S.page = 1; renderTable(); });
     $("t").addEventListener("change", function(e){ S.t = e.target.value; S.page = 1; renderTable(); });
     $("mgr").addEventListener("change", function(e){ S.mgr = e.target.value; S.page = 1; renderTable(); });
-    $("hideNew").addEventListener("change", function(e){ S.hideNew = e.target.checked; S.page = 1; renderTable(); });
+    $("hideBad").addEventListener("change", function(e){ S.hideBad = e.target.checked; S.page = 1; renderTable(); });
     $("tenure").addEventListener("change", function(e){ S.tenure = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
     $("exp").addEventListener("change", function(e){ S.exp = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
     $("ys").addEventListener("change", function(e){ S.ys = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
