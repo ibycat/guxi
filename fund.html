@@ -205,7 +205,7 @@ tbody tr:hover{background:#FCFBF8;}
   function fmtDays(d){
     if (!isNum(d) || d <= 0) return "—";
     var y = Math.floor(d / 365), m = Math.floor((d % 365) / 30);
-    if (y > 0) return y + "年" + (m > 0 ? m + "月" : "");
+    if (y > 0) return y + "年" + (m > 0 ? "月" : "");
     return m > 0 ? m + "月" : d + "天";
   }
 
@@ -277,6 +277,8 @@ tbody tr:hover{background:#FCFBF8;}
           // 没有最新净值的多是已终止/已折算的份额，它的阶段收益是历史残值，
           // 比如 960033 净值序列停在 2020-05-26，近一年却显示 304%
           dead: r.nav == null,
+          // 净值正常但阶段收益离谱（|近1年| ≥ 150%），同样是折算/口径问题
+          odd: isNum(r.y1) && Math.abs(r.y1) >= 150,
           exp: mid && isNum(expById[mid]) ? expById[mid] : null
         });
       }
@@ -296,9 +298,11 @@ tbody tr:hover{background:#FCFBF8;}
       var wA = rows.filter(function(x){ return isNum(x.a); }).length;
       var nf = rows.filter(function(x){ return x.nf; }).length;
       var dead = rows.filter(function(x){ return x.dead; }).length;
+      var odd = rows.filter(function(x){ return x.odd; }).length;
       $("subline").textContent = "共 " + rows.length.toLocaleString() + " 只 · 有规模 " +
         wS.toLocaleString() + " · 有经理数据 " + wA.toLocaleString() +
-        " · 无净值 " + dead.toLocaleString() + " · 未成立 " + nf.toLocaleString();
+        " · 无净值 " + dead.toLocaleString() + " · 收益异常 " + odd.toLocaleString() +
+        " · 未成立 " + nf.toLocaleString();
       renderTable();
     }).catch(function(err){
       $("subline").textContent = "基金数据暂时取不到";
@@ -314,7 +318,7 @@ tbody tr:hover{background:#FCFBF8;}
     for (var i = 0; i < S.rows.length; i++){
       var r = S.rows[i];
       if (S.t && r.t !== S.t) continue;
-      if (S.hideBad && (r.nf || r.dead)) continue;
+      if (S.hideBad && (r.nf || r.dead || r.odd)) continue;
       if (S.mgr === "1" && r.jjn !== 1) continue;
       if (S.mgr === "2" && !(r.jjn > 1)) continue;
       if (S.gsMin != null && !(isNum(r.gs) && r.gs >= S.gsMin)) continue;
@@ -373,15 +377,16 @@ tbody tr:hover{background:#FCFBF8;}
             (r.gn > 1 ? '<span class="tag">' + r.gn + "份</span>" : "") +
             (r.jjn === 1 ? '<span class="tag one">单人</span>' : "") +
             (r.nf ? '<span class="tag new">未成立</span>' : "") +
-            (r.dead ? '<span class="tag new">无净值</span>' : "") + "</td>" +
+            (r.dead ? '<span class="tag new">无净值</span>' : "") +
+            (r.odd ? '<span class="tag new">收益异常</span>' : "") + "</td>" +
           '<td class="r num">' + (isNum(r.gs) ? yi(r.gs) + "亿" : "—") + "</td>" +
           '<td class="r num">' + (r.gn || "—") + "</td>" +
           '<td class="num">' + (r.jj || "—") + "</td>" +
           '<td class="r num">' + (isNum(r.a) ? yi(r.a) + "亿" : "—") + "</td>" +
           '<td class="r num">' + fmtDays(r.d) + "</td>" +
-          '<td class="r num ' + (r.dead ? "flat" : cls(r.y1)) + '">' + (r.dead ? "—" : signed(r.y1)) + "</td>" +
-          '<td class="r num ' + (r.dead ? "flat" : cls(r.y3)) + '">' + (r.dead ? "—" : signed(r.y3)) + "</td>" +
-          '<td class="r num ' + (r.dead ? "flat" : cls(r.ytd)) + '">' + (r.dead ? "—" : signed(r.ytd)) + "</td>" +
+          '<td class="r num ' + ((r.dead || r.odd) ? "flat" : cls(r.y1)) + '">' + ((r.dead || r.odd) ? "—" : signed(r.y1)) + "</td>" +
+          '<td class="r num ' + ((r.dead || r.odd) ? "flat" : cls(r.y3)) + '">' + ((r.dead || r.odd) ? "—" : signed(r.y3)) + "</td>" +
+          '<td class="r num ' + ((r.dead || r.odd) ? "flat" : cls(r.ytd)) + '">' + ((r.dead || r.odd) ? "—" : signed(r.ytd)) + "</td>" +
           (S.range ? '<td class="r num ' + cls(num(rc)) + '">' + signed(num(rc)) + "</td>" : "") +
           '<td class="r num">' + (r.est || "—") + "</td>" +
           "</tr>";
