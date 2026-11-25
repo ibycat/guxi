@@ -92,16 +92,7 @@ jobs:
             head -c 2 "$g" | od -An -tx1 | grep -q "1f 8b" && echo "$g gzip ok" || { echo "$g 不是合法 gzip"; exit 1; }
           done
 
-      - name: 推送到 data 分支（单提交 force-push，不污染 main 历史）
-        run: |
-          set -e
-          cd out
-          git init -q -b data
-          git config user.name "guxi-snapshot-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add -A
-          git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
-          echo "pushed $(ls -1 | tr '\n' ' ')"
+      - name: 推送到 data 分支（安全合并推送，不污染 main 历史）
+        run: bash scripts/pushdata.sh out
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
