@@ -1,7 +1,7 @@
 name: fundrank
 
-# 从第三方天天基金 API 拉全市场排行（收益 + 规模）。
-# 约 850 页 × 30 条，4 并发，几分钟跑完 —— 比逐只爬 F10 快得多。
+# 全市场基金排行（东财 rankhandler，每页 5000 条，5 页左右）。
+# 只取收益与净值；规模/经理/成立日由 fundmeta 从 F10 概况页提供。
 
 on:
   schedule:
@@ -57,10 +57,12 @@ jobs:
             const d=require('./out/fundrank.json');
             const rows=d.rows||[];
             if(rows.length<1000){console.error('行数过少：'+rows.length);process.exit(1)}
-            const noScale=rows.filter(r=>r.nav2==null).length;
+            if(d.mode!=='full'){console.error('未取全：'+d.count+'/'+d.total);process.exit(1)}
             const noY1=rows.filter(r=>r.y1==null).length;
-            console.log('ok', rows.length, '只 | 缺规模', noScale, '| 缺近1年', noY1);
-            if(noScale/rows.length>0.3){console.error('规模字段缺失过多，解析可能失效');process.exit(1)}
+            const noNav=rows.filter(r=>r.nav==null).length;
+            console.log('ok', rows.length, '只 | 缺净值', noNav, '| 缺近1年', noY1);
+            // 解析失效时最典型的信号是净值全空，这里卡 30%
+            if(noNav/rows.length>0.3){console.error('净值为空过多，解析可能失效');process.exit(1)}
           "
 
       - name: 推送 data 分支
