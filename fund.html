@@ -100,7 +100,7 @@ tbody tr:hover{background:#FCFBF8;}
         <option value="1">仅单基金经理</option>
         <option value="2">仅多基金经理</option>
       </select>
-      <label class="chk"><input type="checkbox" id="hideBad" checked> 隐藏无净值/未成立</label>
+      <label class="chk"><input type="checkbox" id="hideBad" checked> 隐藏无净值/异常/未成立</label>
     </div>
     <div class="toolbar">
       <span class="lbl" style="margin-left:0">在管规模</span>
@@ -205,7 +205,7 @@ tbody tr:hover{background:#FCFBF8;}
   function fmtDays(d){
     if (!isNum(d) || d <= 0) return "—";
     var y = Math.floor(d / 365), m = Math.floor((d % 365) / 30);
-    if (y > 0) return y + "年" + (m > 0 ? "月" : "");
+    if (y > 0) return y + "年" + (m > 0 ? m + "月" : "");
     return m > 0 ? m + "月" : d + "天";
   }
 
