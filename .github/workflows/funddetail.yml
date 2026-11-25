@@ -1,17 +1,14 @@
 name: funddetail
 
 # 基金详情批量抓取（第三方 API）：全称 / 经理 / 成立日 / 规模 / 业绩基准 / 跟踪指数。
-# 全量约 2.5 万只，每批 12000（约 18 分钟），2~3 批铺满，之后只补新增。
+#
+# 已停用自动运行。2026-11-25 起详情改由 fundmeta（东财 F10 概况页）产出，
+# 它同样是「全称/规模/经理(含 id)/成立日/基准/跟踪标的」，并且没有外部依赖。
+# 这里保留 workflow_dispatch 只为应急：万一东财解析失效，可手动跑一次顶住。
+# 不要再加回 schedule —— 否则会用 2.5 万只（含清盘/未成立份额）覆盖东财的 2 万只存续基金。
 
 on:
-  schedule:
-    - cron: "50 1 * * *"
-    - cron: "50 13 * * *"
   workflow_dispatch:
-  push:
-    paths:
-      - "scripts/funddetail.mjs"
-      - ".github/workflows/funddetail.yml"
 
 permissions:
   contents: write
