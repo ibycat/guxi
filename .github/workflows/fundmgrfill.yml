@@ -1,0 +1,69 @@
+name: fundmgrfill
+
+# 补齐 fundmgr 的空洞：按基金维度反查经理，补上任职天数与在管规模。
+# 一次性任务，也可以在 fundmgr 之后按需手动跑。
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/fundmgrfill.mjs"
+      - ".github/workflows/fundmgrfill.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      FILL_LIMIT: "0"
+      MGR_CAP: "1200"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 取出已有的 data 分支产物
+        run: |
+          mkdir -p out
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git fetch --depth=1 origin data
+            for f in a.json hk.json fund.json fundrank.json funddetail.json mgrmap.json managers.json fundmgr.json fundmeta.json; do
+              git show "FETCH_HEAD:$f" > "out/$f" 2>/dev/null || rm -f "out/$f"
+            done
+            echo "已带回：$(ls -1 out | tr '\n' ' ')"
+          fi
+
+      - name: 补齐经理数据
+        env:
+          SNAPSHOT_DIR: out
+        run: node scripts/fundmgrfill.mjs --limit "$FILL_LIMIT" --mgrcap "$MGR_CAP"
+
+      - name: 校验产物
+        run: |
+          set -e
+          node -e "
+            const d=require('./out/funddetail.json');
+            const f=require('./out/fundmgr.json');
+            const codes=d.rows.map(r=>r.c).filter(Boolean);
+            const withD=codes.filter(c=>f.rows[c]&&f.rows[c].d!=null).length;
+            const withA=codes.filter(c=>f.rows[c]&&f.rows[c].a!=null).length;
+            const pd=withD/codes.length, pa=withA/codes.length;
+            console.log('有任职', withD, '/', codes.length, (pd*100).toFixed(1)+'%', '| 有在管规模', withA, (pa*100).toFixed(1)+'%');
+            if(pd<0.95){console.error('任职覆盖率仍低于 95%');process.exit(1)}
+          "
+
+      - name: 推送 data 分支
+        run: bash scripts/pushdata.sh fundmgr.json managers.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
