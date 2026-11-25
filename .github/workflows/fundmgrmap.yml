@@ -23,7 +23,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 反查是串行第三方接口，4000 个姓名单轮就要 20~30 分钟，所以 timeout 放到 60。
+    timeout-minutes: 60
     env:
       MAP_LIMIT: "4000"
     steps:
