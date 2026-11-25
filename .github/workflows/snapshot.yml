@@ -93,6 +93,6 @@ jobs:
           done
 
       - name: 推送到 data 分支（安全合并推送，不污染 main 历史）
-        run: bash scripts/pushdata.sh out
+        run: bash scripts/pushdata.sh a.json hk.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
