@@ -2,20 +2,17 @@ name: fundmeta
 
 # 基金元信息（规模 / 经理 / 跟踪标的）抓取。
 # 需要逐只访问 F10 概况页，量大，所以支持 --limit 分批：
-#   首次用 300 只验证解析，确认无误后再改 MATMETA_LIMIT 逐步放大。
+#   首次用 300 只验证解析，确认无误后再改 META_LIMIT 逐步放大。
 # 规模来自季报，一季度才变一次，不需要每天全量。
+#
+# 已降级为「手动兜底」：只保留 workflow_dispatch，不再有 schedule / push 触发。
+# 原因：fundmeta 逐只爬东财 F10 页面，速度和稳定性都不如第三方 funddetail；
+#       经理 id 也已改由 mgrmap 提供。保留它只为必要时手动跑一次。
+# 发布统一走 scripts/pushdata.sh（clone 最新 data 分支 + 覆盖 + 普通 push），
+# 不再 force push，避免把 fundrank / funddetail 等他人产物冲掉。
 
 on:
-  schedule:
-    # 每天两批（UTC 01:30 / 13:30 = 北京 09:30 / 21:30），每批 3000 只，
-    # 约 7 批铺满 2.1 万只
-    - cron: "30 1 * * *"
-    - cron: "30 13 * * *"
   workflow_dispatch:
-  push:
-    paths:
-      - "scripts/fundmeta.mjs"
-      - ".github/workflows/fundmeta.yml"
 
 permissions:
   contents: write
@@ -36,7 +33,7 @@ jobs:
         with:
           node-version: "20"
 
-      # data 分支每次全量重写，所以先把已有产物取下来，避免冲掉股票/基金快照
+      # 抓取脚本会读已有产物做增量，先把 data 分支上的文件取下来
       - name: 取出已有的 data 分支产物
         run: |
           mkdir -p out
@@ -70,15 +67,6 @@ jobs:
           "
 
       - name: 推送 data 分支
-        run: |
-          set -e
-          cd out
-          git init -q -b data
-          git config user.name "guxi-snapshot-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add -A
-          git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
-          echo "pushed $(ls -1 | tr '\n' ' ')"
+        run: bash scripts/pushdata.sh out
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
