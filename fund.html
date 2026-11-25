@@ -51,6 +51,9 @@ tbody tr:hover{background:#FCFBF8;}
 .up{color:var(--red);} .down{color:var(--green);} .flat{color:var(--ink3);}
 .tag{display:inline-block; font-size:10.5px; padding:1.5px 5px; border-radius:4px; background:var(--chip); color:var(--ink3); margin-left:5px;}
 .tag.one{background:#EAF3EE; color:#1F6B4A;}
+.tag.new{background:#FBF0DC; color:#8A5A0B;}
+.chk{font-size:12px; color:var(--ink2); display:inline-flex; align-items:center; gap:4px; cursor:pointer; user-select:none;}
+.chk input{margin:0;}
 .pager{display:flex; align-items:center; justify-content:space-between; padding:9px 12px; font-size:12px; color:var(--ink2); flex-wrap:wrap; gap:8px;}
 .pgbtns{display:flex; gap:4px; align-items:center;}
 .pgbtn{min-width:26px; height:26px; padding:0 6px; border:1px solid var(--line); background:var(--panel); border-radius:6px; font-size:12px; color:var(--ink2); cursor:pointer; font-family:inherit;}
@@ -97,6 +100,7 @@ tbody tr:hover{background:#FCFBF8;}
         <option value="1">仅单基金经理</option>
         <option value="2">仅多基金经理</option>
       </select>
+      <label class="chk"><input type="checkbox" id="hideNew"> 隐藏未成立</label>
     </div>
     <div class="toolbar">
       <span class="lbl" style="margin-left:0">在管规模</span>
@@ -170,7 +174,7 @@ tbody tr:hover{background:#FCFBF8;}
 
   var S = {
     rows: [], sortKey: "y1", sortDir: -1, page: 1, size: 50,
-    q: "", t: "", theme: "", mgr: "", tenure: 0, exp: 0, ys: 0,
+    q: "", t: "", theme: "", mgr: "", tenure: 0, exp: 0, ys: 0, hideNew: false,
     gsMin: null, gsMax: null, aMin: null, aMax: null,
     range: null
   };
@@ -267,6 +271,8 @@ tbody tr:hover{background:#FCFBF8;}
           idx: det.idx || "",
           d: isNum(mm.d) ? mm.d : null,
           a: isNum(mm.a) ? mm.a : null,
+          // 没有成立日的都是还没成立的新发基金，源站没有规模/类型
+          nf: !det.est,
           exp: mid && isNum(expById[mid]) ? expById[mid] : null
         });
       }
@@ -284,8 +290,10 @@ tbody tr:hover{background:#FCFBF8;}
 
       var wS = rows.filter(function(x){ return isNum(x.gs); }).length;
       var wA = rows.filter(function(x){ return isNum(x.a); }).length;
+      var nf = rows.filter(function(x){ return x.nf; }).length;
       $("subline").textContent = "共 " + rows.length.toLocaleString() + " 只 · 有规模 " +
-        wS.toLocaleString() + " · 有经理数据 " + wA.toLocaleString();
+        wS.toLocaleString() + " · 有经理数据 " + wA.toLocaleString() +
+        " · 未成立 " + nf.toLocaleString();
       renderTable();
     }).catch(function(err){
       $("subline").textContent = "基金数据暂时取不到";
@@ -301,6 +309,7 @@ tbody tr:hover{background:#FCFBF8;}
     for (var i = 0; i < S.rows.length; i++){
       var r = S.rows[i];
       if (S.t && r.t !== S.t) continue;
+      if (S.hideNew && r.nf) continue;
       if (S.mgr === "1" && r.jjn !== 1) continue;
       if (S.mgr === "2" && !(r.jjn > 1)) continue;
       if (S.gsMin != null && !(isNum(r.gs) && r.gs >= S.gsMin)) continue;
@@ -357,7 +366,8 @@ tbody tr:hover{background:#FCFBF8;}
           '<td class="num">' + (start + i + 1) + "</td>" +
           '<td><span class="nm">' + r.n + '</span><span class="code num">' + r.c + "</span>" +
             (r.gn > 1 ? '<span class="tag">' + r.gn + "份</span>" : "") +
-            (r.jjn === 1 ? '<span class="tag one">单人</span>' : "") + "</td>" +
+            (r.jjn === 1 ? '<span class="tag one">单人</span>' : "") +
+            (r.nf ? '<span class="tag new">未成立</span>' : "") + "</td>" +
           '<td class="r num">' + (isNum(r.gs) ? yi(r.gs) + "亿" : "—") + "</td>" +
           '<td class="r num">' + (r.gn || "—") + "</td>" +
           '<td class="num">' + (r.jj || "—") + "</td>" +
@@ -470,6 +480,7 @@ tbody tr:hover{background:#FCFBF8;}
     $("theme").addEventListener("input", function(e){ S.theme = e.target.value; S.page = 1; renderTable(); });
     $("t").addEventListener("change", function(e){ S.t = e.target.value; S.page = 1; renderTable(); });
     $("mgr").addEventListener("change", function(e){ S.mgr = e.target.value; S.page = 1; renderTable(); });
+    $("hideNew").addEventListener("change", function(e){ S.hideNew = e.target.checked; S.page = 1; renderTable(); });
     $("tenure").addEventListener("change", function(e){ S.tenure = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
     $("exp").addEventListener("change", function(e){ S.exp = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
     $("ys").addEventListener("change", function(e){ S.ys = parseFloat(e.target.value) || 0; S.page = 1; renderTable(); });
