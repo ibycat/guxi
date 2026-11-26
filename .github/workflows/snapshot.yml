@@ -50,8 +50,24 @@ jobs:
       # 抓取失败不该让整个流程变红：东财对 GitHub 出口 IP 有风控，
       # 偶发 502 或部分页拿不到是常态。这里允许失败，后面回填上一份快照继续发布，
       # 页面上本来就有「数据已 N 天未更新」的提示，不会让人误当当天行情。
+      # 先花 8 秒探一下 push2 通不通。东财封 GitHub 出口时，主脚本要跑满 16 分钟
+      # 超时才失败，再重试 6 分钟，白白浪费 22 分钟才轮到兜底。
+      - name: 探测东财是否可用
+        id: probe
+        run: |
+          code=$(curl -s -m 8 -o /dev/null -w "%{http_code}" -A "Mozilla/5.0" \
+            "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=1&po=0&np=1&fltt=2&invt=2&fid=f12&fs=m:0+t:6&fields=f12" || echo 000)
+          echo "push2 返回 $code"
+          if [ "$code" = "200" ]; then
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            echo "东财行情接口不可用（$code），本轮直接走腾讯兜底" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: 生成快照
         id: snap
+        if: steps.probe.outputs.blocked == 'false'
         continue-on-error: true
         timeout-minutes: 16
         env:
