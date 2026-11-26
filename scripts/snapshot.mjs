@@ -311,8 +311,11 @@ async function buildA() {
   }
   const q = { rows: merged, total: totalSum, pages: pagesSum, okPages: okPagesSum };
   console.log(`[A] 行情 ${q.okPages}/${q.pages} 页，${q.rows.length}/${q.total} 只`);
-  if (q.rows.length < q.total * 0.6) {
-    throw new Error(`行情严重缺失：${q.rows.length}/${q.total}`);
+  // 门槛从 60% 提到 90%：腾讯兜底是从上一份快照为基准的，
+  // 一旦这里放行一份残缺数据（比如只有 2454 只），它就成了下一轮的基准，
+  // 每轮只会更小 —— 实测已经发生过一次从 4516 掉到 2454。宁可判失败让兜底接手。
+  if (q.rows.length < q.total * 0.9) {
+    throw new Error(`行情不完整：${q.rows.length}/${q.total}（低于 90%，改用兜底并保留上一份）`);
   }
   const partialA = q.okPages < q.pages ? `${q.okPages}/${q.pages}` : "";
 
