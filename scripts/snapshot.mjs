@@ -62,7 +62,14 @@ const CYCLE = new Set([
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// 全局截止时间：行情抓取最坏情况是「每页都重试到最后一个镜像」，
+// 加起来能把整轮拖过 25 分钟的 job 超时（实测已出现过 15 分钟的慢轮）。
+// 到点后所有请求立刻失败，让上层按「已拿到的部分」继续算，
+// 完整度不够时由工作流回填上一份快照。
+const DEADLINE = Date.now() + 11 * 60 * 1000;
+
 async function rawGet(url) {
+  if (Date.now() > DEADLINE) throw new Error("deadline_exceeded");
   if (USE_CURL) {
     const { stdout } = await execFileP(
       "curl",
@@ -74,7 +81,8 @@ async function rawGet(url) {
   }
   const res = await fetch(url, {
     headers: { "user-agent": UA, accept: "*/*", referer: "https://quote.eastmoney.com/" },
-    signal: AbortSignal.timeout(20000)
+    // 20s 太长：3 次重试 × 5 个镜像，单页最坏能拖到 5 分钟，整轮就会撞上 25 分钟的 job 超时
+    signal: AbortSignal.timeout(15000)
   });
   if (!res.ok) throw new Error("http_" + res.status);
   return res.text();
