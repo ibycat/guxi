@@ -53,6 +53,7 @@ jobs:
       - name: 生成快照
         id: snap
         continue-on-error: true
+        timeout-minutes: 16
         env:
           SNAPSHOT_DIR: out
         run: |
@@ -64,6 +65,7 @@ jobs:
         if: steps.snap.outcome == 'failure'
         id: snap2
         continue-on-error: true
+        timeout-minutes: 6
         env:
           SNAPSHOT_DIR: out
         run: |

@@ -113,11 +113,16 @@ async function getText(url, tries = 3) {
   throw last;
 }
 
-// 镜像轮换：任一域名成功就记住它，下次优先用
+// 镜像轮换：任一域名成功就记住它，下次优先用。
+// budgetMs 是单次调用的总预算 —— 没有它的话，10 个镜像 × 2 次重试 × 15 秒超时
+// 最坏能挂 5 分钟，而东财对整个出口 IP 封禁时，这 5 分钟一定是白等。
 let hostCursor = 0;
-async function getRotating(buildUrl, triesPerHost = 2) {
+let IP_BLOCKED = false;
+async function getRotating(buildUrl, triesPerHost = 2, budgetMs = 30000) {
+  const start = Date.now();
   let last;
   for (let i = 0; i < PUSH2_HOSTS.length; i++) {
+    if (Date.now() - start > budgetMs) break;
     const idx = (hostCursor + i) % PUSH2_HOSTS.length;
     try {
       const text = await getText(buildUrl(PUSH2_HOSTS[idx]), triesPerHost);
@@ -142,19 +147,27 @@ function diffOf(text) {
 
 // 拉一个 clist 列表：先拿首页确定总页数，再低并发拉其余页，最后串行补缺
 async function pullClist(fsCode, fields, po) {
+  // 已经确认出口 IP 被整体封禁时，后面所有板块直接跳过，别再一组组试
+  if (IP_BLOCKED) throw new Error("ip_blocked");
+
   const q = (pn) =>
     `${PATH_CLIST}?po=${po}&np=1&fltt=2&invt=2&fid=f12&fs=${fsCode}&fields=${fields}&pz=100&pn=${pn}`;
 
   let first = null;
-  for (let attempt = 0; attempt < 3 && !first; attempt++) {
-    if (attempt) await sleep(5000 * attempt);
+  // 首页只试 2 轮、每轮给 40 秒预算：首页都拿不到，说明是这个 IP 被封，
+  // 不是个别页抖动，多试只是把整轮耗到 job 超时
+  for (let attempt = 0; attempt < 2 && !first; attempt++) {
+    if (attempt) await sleep(8000);
     try {
-      first = await getRotating((h) => `https://${h}${q(1)}`, 2);
+      first = await getRotating((h) => `https://${h}${q(1)}`, 1, 40000);
     } catch (e) {
       console.log(`  首页获取失败（第 ${attempt + 1} 次）：${e && e.message}`);
     }
   }
-  if (!first) throw new Error("首页拉取失败");
+  if (!first) {
+    IP_BLOCKED = true;
+    throw new Error("首页拉取失败（出口 IP 疑似被限）");
+  }
   const total = JSON.parse(first).data.total || 0;
   const pages = Math.max(1, Math.ceil(total / 100));
   const texts = new Array(pages).fill(null);
