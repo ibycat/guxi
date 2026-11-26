@@ -1087,7 +1087,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       setStatus("ok", "快照 " + stamp(S.loadedAt));
       $("subline").textContent = (S.hkAll ? "全部港股 " : "港股通 ") + rows.length.toLocaleString() +
         " 只 · 首屏 " + (ms / 1000).toFixed(2) + "s · 收盘 " + (pack.asof || "—") +
-        (pack.partial ? " · 部分分页未取到（" + pack.partial + "）" : "");
+        (pack.partial === "qq" ? " · 行情为腾讯兜底（东财接口不可用）"
+          : pack.partial ? " · 部分分页未取到（" + pack.partial + "）" : "");
       checkStale(pack.asof);
       $("hintTime").textContent = "快照 " + stamp(S.loadedAt);
       renderAll();
