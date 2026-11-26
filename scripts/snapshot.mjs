@@ -27,11 +27,20 @@ const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
+// 镜像池：push2 对同一出口 IP 的限流是按域名各自计的，
+// 多挂几个编号镜像能明显降低「整页拿不到」的概率。
+// 实测 GitHub Runner 连续请求时，5 个镜像会在几分钟内一起被限，
+// 扩到 10 个后单页失败率下降明显。
 const PUSH2_HOSTS = [
   "push2.eastmoney.com",
-  "82.push2.eastmoney.com",
   "1.push2.eastmoney.com",
+  "7.push2.eastmoney.com",
   "17.push2.eastmoney.com",
+  "23.push2.eastmoney.com",
+  "33.push2.eastmoney.com",
+  "47.push2.eastmoney.com",
+  "63.push2.eastmoney.com",
+  "82.push2.eastmoney.com",
   "push2delay.eastmoney.com"
 ];
 
@@ -66,7 +75,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 加起来能把整轮拖过 25 分钟的 job 超时（实测已出现过 15 分钟的慢轮）。
 // 到点后所有请求立刻失败，让上层按「已拿到的部分」继续算，
 // 完整度不够时由工作流回填上一份快照。
-const DEADLINE = Date.now() + 11 * 60 * 1000;
+const DEADLINE = Date.now() + 14 * 60 * 1000;
 
 async function rawGet(url) {
   if (Date.now() > DEADLINE) throw new Error("deadline_exceeded");
@@ -159,24 +168,29 @@ async function pullClist(fsCode, fields, po) {
       if (i >= pages) return;
       try {
         texts[i] = await getRotating((h) => `https://${h}${q(i + 1)}`, 2);
+        // 页与页之间留点随机间隔，避免稳定打到限流阈值上
+        await sleep(250 + Math.random() * 350);
       } catch (e) {
         texts[i] = null;
+        // 整页十个镜像都失败，基本是被限流了，先退避再继续，别把后面的页也一起拖死
+        await sleep(2500);
       }
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONC, pages - 1) }, () => worker()));
 
-  for (let round = 1; round <= 2; round++) {
+  for (let round = 1; round <= 3; round++) {
     const missing = [];
     for (let i = 1; i < pages; i++) if (!texts[i]) missing.push(i);
     if (!missing.length) break;
     console.log(`  第 ${round} 轮补拉：缺 ${missing.length} 页`);
     for (const i of missing) {
       try {
-        await sleep(400 * round);
-        texts[i] = await getRotating((h) => `https://${h}${q(i + 1)}`, 3);
+        await sleep(1200 * round + Math.random() * 800);
+        // 每个镜像只试 1 次：镜像已有 10 个，逐个试比单镜像死磕更容易成功
+        texts[i] = await getRotating((h) => `https://${h}${q(i + 1)}`, 1);
       } catch (e) {
-        /* 放弃该页 */
+        /* 放弃该页，下一轮再试 */
       }
     }
   }
