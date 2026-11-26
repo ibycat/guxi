@@ -99,22 +99,27 @@ jobs:
           grep -E "Error|error|失败|严重缺失|http_|timeout" snap.log 2>/dev/null | tail -20 >> "$GITHUB_STEP_SUMMARY" || tail -20 snap.log >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      # 东财对 GitHub Runner 出口 IP 整体封禁时（push2 全程 502），
+      # 东财对 GitHub Runner 出口 IP 整体封禁时（push2 全程 302/502），
       # 用腾讯行情补价格：只换价格源，行业/上市日沿用上一份快照，
       # 股息率按「旧价/新价」比例换算，输出格式与主脚本一致。
-      - name: A 股兜底（腾讯行情）
+      - name: 行情兜底（腾讯行情，A 股与港股）
         if: always()
         continue-on-error: true
         env:
           SNAPSHOT_DIR: out
           PREV_DIR: prev
         run: |
-          if [ -s out/a.json ]; then
-            echo "本轮 A 股已生成，跳过兜底"
+          need=""
+          [ -s out/a.json ] || need="a"
+          if [ ! -s out/hk.json ]; then
+            if [ -z "$need" ]; then need="hk"; else need="both"; fi
+          fi
+          if [ -z "$need" ]; then
+            echo "两个市场都已生成，跳过兜底"
             exit 0
           fi
-          echo "A 股未生成，启用腾讯行情兜底"
-          node scripts/snapshot-qq.mjs 2>&1 | tee -a snap.log
+          echo "需要兜底：$need"
+          node scripts/snapshot-qq.mjs --market "$need" 2>&1 | tee -a snap.log
 
       # 本轮没产出的市场，用上一次的文件顶上（只有 out/ 里确实没有才回填）
       # if: always() —— 上一步失败也要跑，否则失败的 run 会连上一份快照都发不出去
