@@ -179,6 +179,15 @@ async function pullClist(fsCode, fields, po) {
   }
   await Promise.all(Array.from({ length: Math.min(CONC, pages - 1) }, () => worker()));
 
+  // 首轮就大面积失败，说明不是个别页抖动，而是出口 IP 被整体拒绝（实测 502）。
+  // 这时候再补拉三轮纯属空转 —— 上一轮就这样白等了 10 分钟，
+  // 不如立刻失败，让工作流去走「重试一次」和「回填上一份快照」。
+  const got0 = texts.filter((t, i) => i > 0 && t).length;
+  const need0 = pages - 1;
+  if (need0 > 4 && got0 < need0 * 0.4) {
+    throw new Error(`行情接口整体拒绝：首轮只拿到 ${got0}/${need0} 页，疑似出口 IP 被限`);
+  }
+
   for (let round = 1; round <= 3; round++) {
     const missing = [];
     for (let i = 1; i < pages; i++) if (!texts[i]) missing.push(i);
@@ -187,8 +196,9 @@ async function pullClist(fsCode, fields, po) {
     for (const i of missing) {
       try {
         await sleep(1200 * round + Math.random() * 800);
-        // 每个镜像只试 1 次：镜像已有 10 个，逐个试比单镜像死磕更容易成功
-        texts[i] = await getRotating((h) => `https://${h}${q(i + 1)}`, 1);
+        // 每个镜像试 2 次：10 个镜像 × 2 次已经够多了，
+        // 只试 1 次会让「单页偶发 502」直接变成永久丢页（实测港股从 668 掉到 600）
+        texts[i] = await getRotating((h) => `https://${h}${q(i + 1)}`, 2);
       } catch (e) {
         /* 放弃该页，下一轮再试 */
       }
