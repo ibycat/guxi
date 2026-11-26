@@ -8,6 +8,10 @@ on:
     - cron: "10 8 * * *"
     - cron: "35 23 * * *"
   workflow_dispatch:
+  # 改本文件时自动跑一次，用来验证改动（cron 漂移太大，不能靠定时验证）
+  push:
+    paths:
+      - ".github/workflows/snapshot.yml"
 
 permissions:
   contents: write
@@ -43,13 +47,44 @@ jobs:
             echo "data 分支还不存在，本次全量生成"
           fi
 
+      # 抓取失败不该让整个流程变红：东财对 GitHub 出口 IP 有风控，
+      # 偶发 502 或部分页拿不到是常态。这里允许失败，后面回填上一份快照继续发布，
+      # 页面上本来就有「数据已 N 天未更新」的提示，不会让人误当当天行情。
       - name: 生成快照
+        id: snap
+        continue-on-error: true
         env:
           SNAPSHOT_DIR: out
-        run: node scripts/snapshot.mjs
+        run: |
+          set -o pipefail
+          node scripts/snapshot.mjs 2>&1 | tee snap.log
+
+      # 失败后立即重试一次：风控多为短时窗口，隔 45 秒换一组镜像往往就过了
+      - name: 生成失败时重试一次
+        if: steps.snap.outcome == 'failure'
+        id: snap2
+        continue-on-error: true
+        env:
+          SNAPSHOT_DIR: out
+        run: |
+          set -o pipefail
+          echo "第一次抓取失败，45 秒后重试" >> "$GITHUB_STEP_SUMMARY"
+          sleep 45
+          node scripts/snapshot.mjs 2>&1 | tee -a snap.log
+
+      # 把失败原因写进 run summary，不用登进去翻日志
+      - name: 记录失败原因
+        if: steps.snap.outcome == 'failure'
+        run: |
+          echo "## 抓取失败" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -E "Error|error|失败|严重缺失|http_|timeout" snap.log 2>/dev/null | tail -20 >> "$GITHUB_STEP_SUMMARY" || tail -20 snap.log >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       # 本轮没产出的市场，用上一次的文件顶上（只有 out/ 里确实没有才回填）
+      # if: always() —— 上一步失败也要跑，否则失败的 run 会连上一份快照都发不出去
       - name: 回填上次产物
+        if: always()
         run: |
           set -e
           for b in a hk; do
@@ -80,6 +115,7 @@ jobs:
           test -s out/a.json || test -s out/hk.json
 
       - name: 校验产物是合法 JSON
+        if: always()
         run: |
           set -e
           for f in out/a.json out/hk.json; do
@@ -93,6 +129,7 @@ jobs:
           done
 
       - name: 推送到 data 分支（安全合并推送，不污染 main 历史）
+        if: always()
         run: bash scripts/pushdata.sh a.json hk.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
