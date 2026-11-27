@@ -933,7 +933,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   };
 
   function parseFlags(str){
-    return String(str || "").split("|").filter(Boolean).map(function(x){
+    // 行内多标记用 "~" 分隔，列间才是 "|"。两边都切，兼容历史上用过 "|" 的旧快照。
+    return String(str || "").split(/[|~]/).filter(Boolean).map(function(x){
       var i = x.indexOf(":");
       if (i < 0) return ["none", x];
       return [FLAG_CODE[x.slice(0, i)] || "info", x.slice(i + 1)];

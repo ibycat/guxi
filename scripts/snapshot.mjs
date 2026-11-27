@@ -477,7 +477,11 @@ async function buildA() {
     C.po.push(payout == null ? -1 : Math.round(payout * 1e4));
     C.cs.push(consec);
     C.ys.push(years);
-    C.fl.push(flags.join("|"));
+    // 行内多个标记用 "~" 连接。这里千万不能用 "|"：
+    // 列与列之间也是用 "|" 拼的（见下方 fl: C.fl.join("|")），
+    // 混用会让第一只带多标记的股票之后整列错位 —— 实测 4516 只的 fl 被拆成了 4749 段，
+    // 导致贵州茅台这类股票的「稳健」标记被挪到别人身上，默认筛选里直接看不到。
+    C.fl.push(flags.join("~"));
   }
 
   // 高股息样本留档：打印出来便于人工判断是真高息还是数据问题
