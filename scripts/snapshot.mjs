@@ -464,7 +464,9 @@ async function buildA() {
     const avg3 = n3 ? sum3 / n3 / price : 0;
 
     const flags = [];
-    if (ttm <= 0) flags.push("none:无分红");
+    // 只看 TTM 会误标：除息日刚好滑出 12 个月窗口、但上年确实派了钱的股票，
+    // 会出现「上年股息率 18%」配「无分红」标签的自相矛盾（硕世生物就是这样）
+    if (ttm <= 0 && last <= 0) flags.push("none:无分红");
     if (ttm > 0 && consec <= 1) flags.push("warn:分红不连续");
     if (payout != null && payout > 0.9) flags.push("warn:分红率>90%");
     if (ttm > 0.08 && CYCLE.has(ind)) flags.push("warn:周期高位");
@@ -688,7 +690,8 @@ async function buildHK() {
     const avg3 = n3 ? sum3 / n3 / price : 0;
 
     const flags = [];
-    if (ttm <= 0) flags.push("none:无分红");
+    // 与 A 股同一口径：TTM 归零不等于没分过红（01833 就是上年 0、TTM 0 才算无分红）
+    if (ttm <= 0 && last <= 0) flags.push("none:无分红");
     if (nonHkd > 0) flags.push("info:含非港币(已折算)");
     if (ttm > 0 && consec <= 1) flags.push("warn:分红不连续");
     if (ttm > 0.1) flags.push("bad:需核验");
