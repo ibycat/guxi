@@ -312,8 +312,17 @@ tbody tr:hover{background:#FCFBF8;}
     });
   }
 
+  // 搜索归一：去掉空格、全角转半角（与 index.html 同一套规则）
+  function nrm(s){
+    return String(s == null ? "" : s)
+      .replace(/[\s\u3000]+/g, "")
+      .replace(/[\uFF01-\uFF5E]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+      .toUpperCase();
+  }
+
   function filtered(){
     var q = S.q.trim().toLowerCase();
+    var nq = nrm(S.q);
     var th = S.theme.trim().toLowerCase();
     var out = [];
     for (var i = 0; i < S.rows.length; i++){
@@ -329,7 +338,7 @@ tbody tr:hover{background:#FCFBF8;}
       if (S.tenure > 0 && !(isNum(r.d) && r.d >= S.tenure)) continue;
       if (S.exp > 0 && !(isNum(r.exp) && r.exp >= S.exp)) continue;
       if (S.ys > 0){ var y = yearsOf(r.est); if (!(y >= S.ys)) continue; }
-      if (q && r.n.toLowerCase().indexOf(q) < 0 && r.c.indexOf(q) < 0) continue;
+      if (q && nrm(r.n).indexOf(nq) < 0 && r.c.indexOf(q) < 0 && nrm(r.full || "").indexOf(nq) < 0) continue;
       if (th){
         var hay = (r.n + " " + r.idx + " " + r.bench + " " + r.t).toLowerCase();
         if (hay.indexOf(th) < 0) continue;

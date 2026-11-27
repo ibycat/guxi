@@ -119,6 +119,32 @@ function readJson(f) {
   try { return JSON.parse(fs.readFileSync(path.join(OUT_DIR, f), "utf8")); } catch (e) { return null; }
 }
 
+// 上一版基金级汇总：本地有读本地，Actions 里读 data 分支 raw
+async function fetchPrevFundmgr() {
+  const local = path.join(OUT_DIR, "fundmgr.json");
+  try {
+    if (fs.existsSync(local)) {
+      const d = JSON.parse(fs.readFileSync(local, "utf8"));
+      if (d && d.rows) return d.rows;
+    }
+  } catch (e) {
+    /* 本地文件坏了就当没有 */
+  }
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (!repo) return {};
+  try {
+    const res = await fetch(
+      "https://raw.githubusercontent.com/" + repo + "/data/fundmgr.json?t=" + Date.now(),
+      { headers: { "user-agent": "guxi-mgr" }, signal: AbortSignal.timeout(20000) }
+    );
+    if (!res.ok) return {};
+    const d = await res.json();
+    return (d && d.rows) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
@@ -188,6 +214,17 @@ async function main() {
 
   const fundRows = {};
   for (const [c, o] of byFund) fundRows[c] = { d: o.d || null, a: o.a || null, n: o.n };
+
+  // 沿用上一版里「本脚本算不出来」的条目。
+  // fundmgrfill 补的基金只在补洞接口里存在，经理页里没有对应记录，
+  // 所以这里全量重算会把它们冲掉 —— 11-25 那次就是这样丢了 1,211 只，
+  // 页面「有经理数据」从 20,792 掉到 19,603。
+  const prevRows = await fetchPrevFundmgr();
+  let kept = 0;
+  for (const [c, o] of Object.entries(prevRows)) {
+    if (!fundRows[c]) { fundRows[c] = o; kept++; }
+  }
+  if (kept) console.log("[MGR] 沿用上一版补洞条目 " + kept + " 只（总计 " + Object.keys(fundRows).length + "）");
 
   const mtext = JSON.stringify({ v: 1, ts: Date.now(), count: mgrRows.length, rows: mgrRows });
   fs.writeFileSync(path.join(OUT_DIR, "managers.json"), mtext);

@@ -104,6 +104,32 @@ function parseRow(s) {
   };
 }
 
+// 上一版的条数：本地有就本地读，Actions 里从 data 分支的 raw 取
+async function fetchPrevCount() {
+  const local = path.join(OUT_DIR, "fundrank.json");
+  try {
+    if (fs.existsSync(local)) {
+      const d = JSON.parse(fs.readFileSync(local, "utf8"));
+      if (d && d.count) return d.count;
+    }
+  } catch (e) {
+    /* 本地文件坏了就当没有 */
+  }
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (!repo) return null;
+  try {
+    const res = await fetch(
+      "https://raw.githubusercontent.com/" + repo + "/data/fundrank.json?t=" + Date.now(),
+      { headers: { "user-agent": "guxi-rank" }, signal: AbortSignal.timeout(20000) }
+    );
+    if (!res.ok) return null;
+    const d = await res.json();
+    return d && d.count ? d.count : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const limitPages = arg("pages", 0);
@@ -148,6 +174,24 @@ async function main() {
     if (seen.has(r.c)) continue;
     seen.add(r.c);
     uniq.push(r);
+  }
+
+  // 环比护栏：上游 total 自己会缩水 —— 2026-11-26 那天 QDII 类整批消失 199 只，
+  // 而 total 同步变小，所以「已抓/应有」这种同源比例恒为 100%，永远发现不了。
+  // 只有跟上一版的实际条数比，才拦得住整类缺失。
+  const prevCount = await fetchPrevCount();
+  if (prevCount) {
+    const delta = uniq.length - prevCount;
+    const pct = delta / prevCount;
+    console.log("[RANK] 环比：上一版 " + prevCount + " → 本次 " + uniq.length + "（" + (pct * 100).toFixed(2) + "%）");
+    if (pct < -0.02) {
+      throw new Error(
+        "条数环比下跌 " + prevCount + " → " + uniq.length + "（" + (pct * 100).toFixed(1) +
+        "%），疑似上游某类基金整批缺失，拒绝覆盖上一版"
+      );
+    }
+  } else {
+    console.log("[RANK] 取不到上一版条数，跳过环比校验");
   }
 
   const pack = {

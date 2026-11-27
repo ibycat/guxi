@@ -1112,8 +1112,18 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     return r.listDate ? (TODAY - r.listDate) < 3 * 365 * DAY : false;
   }
 
+  // 搜索归一：东财的股票名里混着全角字母和多余空格（「万  科Ａ」），
+  // 直接子串匹配会让「万科」「万科A」都搜不到，只能输代码。
+  function nrm(s){
+    return String(s == null ? "" : s)
+      .replace(/[\s\u3000]+/g, "")
+      .replace(/[\uFF01-\uFF5E]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+      .toUpperCase();
+  }
+
   function filtered(){
     var q = S.q.trim().toLowerCase();
+    var nq = nrm(S.q);
     var out = [];
     for (var i = 0; i < S.rows.length; i++){
       var r = S.rows[i];
@@ -1130,7 +1140,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       if (S.preset === "cycle"){ if (!(CYCLE[r.ind] && yv >= 0.035)) continue; }
       if (S.preset === "check"){ if (!r.flags.some(function(f){ return f[0] === "bad" || f[1] === "周期高位"; })) continue; }
       if (q){
-        if (r.name.toLowerCase().indexOf(q) < 0 && r.code.indexOf(q) < 0) continue;
+        if (nrm(r.name).indexOf(nq) < 0 && r.code.indexOf(q) < 0) continue;
       }
       out.push(r);
     }
