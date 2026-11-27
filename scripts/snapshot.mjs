@@ -396,6 +396,7 @@ async function buildA() {
     const all = byCode.get(code) || [];
     const impl = all.filter((x) => x.prog.includes("实施"));
 
+    // TTM：按除息日滚动 12 个月，钱真正到账才算
     let ttmSum = 0, ttmCnt = 0, annualInWin = 0;
     for (const x of impl) {
       const d = x.ex ? new Date(x.ex + "T00:00:00") : null;
@@ -407,24 +408,58 @@ async function buildA() {
     }
     const ttm = ttmSum / price;
 
-    const annuals = impl
-      .filter((x) => x.period.slice(5) === "12-31")
-      .sort((a, b) => b.period.localeCompare(a.period));
+    // 按财年归集：REPORT_DATE 的年份就是这笔分红所属财年。
+    // 中期/季度分红必须并进该财年，否则「上年股息率」「分红率」会系统性低估近一半 ——
+    // 工行 FY2025 = 中期 1.414 + 年报 1.689 = 3.103 元/10股，
+    // 只取年报会得到 1.86%，真实 3.41%；分红率 16.9% vs 真实 31.0%。
+    const fy = new Map();
+    for (const x of impl) {
+      const d = x.ex ? new Date(x.ex + "T00:00:00") : null;
+      if (!d || isNaN(d) || d > TODAY) continue; // 尚未实施的不计入
+      const yr = +x.period.slice(0, 4);
+      if (!yr) continue;
+      const cur = fy.get(yr) || { dps: 0, eps: 0, hasAnnual: false };
+      cur.dps += x.dps;
+      if (x.period.slice(5) === "12-31") {
+        cur.hasAnnual = true;
+        if (x.eps > 0) cur.eps = x.eps; // 年报口径 EPS，用来算分红率
+      }
+      fy.set(yr, cur);
+    }
 
-    const lastA = annuals.length ? annuals[0] : null;
-    const last = lastA ? lastA.dps / price : 0;
-    const payout = lastA && lastA.eps > 0 ? lastA.dps / lastA.eps : null;
+    // 上年 = 上一个完整财年（y0-1）。拿不到就是 0，绝不回退到多年前的旧年报 ——
+    // 万科最后一笔是 2022 年的 6.8 元，回退会算出 23.94% 的假高息。
+    // 唯一例外：该财年年报已披露但除息日还没到（钱还没派），此时用再上一年。
+    const lastYr = y0 - 1;
+    const lastFY = fy.get(lastYr);
+    const lateAnnual = all.some(
+      (x) => x.period.slice(0, 4) === String(lastYr) && x.period.slice(5) === "12-31" && !impl.includes(x)
+    );
+    const useYr = !lastFY && lateAnnual ? lastYr - 1 : lastYr;
+    const lastF = fy.get(useYr);
+    const lastDps = lastF ? lastF.dps : 0;
+    const last = lastDps / price;
+    // 分红率 = 同一财年的合计派息 ÷ 该财年 EPS（不再是「单条年报 ÷ 年报 EPS」）
+    const payout = lastF && lastF.eps > 0 ? lastDps / lastF.eps : null;
 
-    const yearSet = new Set(annuals.map((a) => +a.period.slice(0, 4)));
+    // 连分年数 / 有分红年数：按财年判断，不再按「年报条数」
     let consec = 0;
-    for (let yy = y0 - 1; yearSet.has(yy); yy--) consec++;
+    for (let yy = useYr; yy >= useYr - HISTORY_YEARS - 1; yy--) {
+      const f = fy.get(yy);
+      if (!f || f.dps <= 0) break;
+      consec++;
+    }
     let years = 0;
-    for (let k = 1; k <= HISTORY_YEARS; k++) if (yearSet.has(y0 - k)) years++;
+    for (let k = 1; k <= HISTORY_YEARS; k++) {
+      const f = fy.get(y0 - k);
+      if (f && f.dps > 0) years++;
+    }
 
+    // 近 3 年均值：三个财年合计派息的算术平均 ÷ 现价
     let sum3 = 0, n3 = 0;
     for (let t = 1; t <= 3; t++) {
-      const found = annuals.find((a) => +a.period.slice(0, 4) === y0 - t);
-      if (found) { sum3 += found.dps; n3++; }
+      const f = fy.get(y0 - t);
+      if (f && f.dps > 0) { sum3 += f.dps; n3++; }
     }
     const avg3 = n3 ? sum3 / n3 / price : 0;
 
@@ -441,8 +476,9 @@ async function buildA() {
     if (ttm >= 0.03 && consec >= 5 && payout != null && payout >= 0.2 && payout <= 0.75)
       flags.push("good:稳健");
 
-    // 从未分红的标的在股息率榜单里就是一堆 0 值噪音，不进快照（省 15% 体积）
-    if (ttm <= 0 && last <= 0 && consec <= 0) continue;
+    // 剔除的是「近 6 年一笔都没派过」的噪音，而不是「最近停了」的公司：
+    // 万科最后一笔是 2022 财年，它该以 0% 留在榜里能被搜到，不该整行消失。
+    if (ttm <= 0 && last <= 0 && years <= 0) continue;
 
     if (ttm > 0.15) {
       hot.push({
@@ -603,9 +639,20 @@ async function buildHK() {
     const price = num(it.f2, 0) || num(it.f18, 0);
     if (!(price > 0)) continue;
 
-    const rr = byCode.get(c) || [];
+    // 同一笔分红会被分页接口返回两次（民生银行 2025 中期出现两条一模一样的记录），
+    // 不去重会让 last 直接翻倍：11.40% vs 真实 6.63%
+    const seenHk = new Set();
+    const rr = [];
+    for (const x of byCode.get(c) || []) {
+      const k = [x.year, x.dps, x.ex, x.ccy, x.type].join("|");
+      if (seenHk.has(k)) continue;
+      seenHk.add(k);
+      rr.push(x);
+    }
+
     let ttmSum = 0, ttmCnt = 0, nonHkd = 0;
     const byYear = new Map();
+    const byYearEx = new Map(); // 剔除特别分配，用于近 3 年均值
     for (const x of rr) {
       const rate = CCY_RATE[x.ccy];
       if (!rate) { nonHkd++; continue; }
@@ -613,15 +660,21 @@ async function buildHK() {
       const hkd = x.dps * rate;
       const d = x.ex ? new Date(x.ex + "T00:00:00") : null;
       if (d && !isNaN(d) && d >= winFrom && d <= TODAY) { ttmSum += hkd; ttmCnt++; }
-      if (x.year) byYear.set(x.year, (byYear.get(x.year) || 0) + hkd);
+      if (x.year) {
+        byYear.set(x.year, (byYear.get(x.year) || 0) + hkd);
+        // 特别分配（如华晨中国 4.3 港币）是一次性的，混进均值会算出 252% 的「3 年均值」
+        if (!String(x.type || "").includes("特别")) {
+          byYearEx.set(x.year, (byYearEx.get(x.year) || 0) + hkd);
+        }
+      }
     }
     const ttm = ttmSum / price;
 
-    let lastYr = null;
-    for (let yy = y0 - 1; yy >= y0 - 2; yy--) {
-      if (byYear.has(yy)) { lastYr = yy; break; }
-    }
-    const last = lastYr ? byYear.get(lastYr) / price : 0;
+    // 只认上一个完整年度，不再回退到前年：
+    // 01833 平安好医生唯一一笔是 2024 年特别分配，回退后「上年股息率」变成 193%，
+    // 而它 2025 年其实一分未派
+    const lastDps = byYear.get(y0 - 1) || 0;
+    const last = lastDps / price;
 
     let consec = 0;
     for (let yy = y0 - 1; byYear.has(yy); yy--) consec++;
@@ -630,7 +683,7 @@ async function buildHK() {
 
     let sum3 = 0, n3 = 0;
     for (let t = 1; t <= 3; t++) {
-      if (byYear.has(y0 - t)) { sum3 += byYear.get(y0 - t); n3++; }
+      if (byYearEx.has(y0 - t)) { sum3 += byYearEx.get(y0 - t); n3++; }
     }
     const avg3 = n3 ? sum3 / n3 / price : 0;
 
