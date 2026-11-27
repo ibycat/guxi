@@ -1123,7 +1123,10 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       if (S.capmin && !(r.mcap >= S.capmin)) continue;
       var yv = currentYield(r);
       if (S.ymin && !(yv >= S.ymin)) continue;
-      if (S.preset === "steady"){ if (!(yv >= 0.04 && r.consec >= 4 && (r.payout == null || r.payout <= 0.8))) continue; }
+      // 「稳健高息」直接按快照里的「稳健」标记筛，不再另立门槛：
+      // 标记本身已经包含股息率、连续分红年数、分红率区间的判据（见 scripts/snapshot.mjs），
+      // 两边各写一套就会出现「标了稳健、预设里却找不到」的割裂。
+      if (S.preset === "steady"){ if (!r.flags.some(function(f){ return f[0] === "good" && f[1] === "稳健"; })) continue; }
       if (S.preset === "cycle"){ if (!(CYCLE[r.ind] && yv >= 0.035)) continue; }
       if (S.preset === "check"){ if (!r.flags.some(function(f){ return f[0] === "bad" || f[1] === "周期高位"; })) continue; }
       if (q){
@@ -1319,7 +1322,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
     if (!total){
       var tip = S.preset === "steady"
-        ? "当前口径下没有符合「稳健高息」的标的（要求股息率 ≥ 4%、连续分红 ≥ 4 年、分红率 ≤ 80%）。<br>可以点「全部」，或切回 TTM 口径再看。"
+        ? "当前口径下没有符合「稳健高息」的标的（需带「稳健」标记，标记由快照按股息率、连续分红年数、分红率区间判定）。<br>可以点「全部」，或切回 TTM 口径再看。"
         : "没有符合条件的标的，试着放宽筛选";
       $("tbody").innerHTML = '<tr><td colspan="11"><div class="skel">' + tip + "</div></td></tr>";
     } else {
