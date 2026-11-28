@@ -863,6 +863,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     $("subline").textContent = "正在读取港股快照…";
 
     return fetchSnapshot("hk").then(function(pack){
+      // 与 loadASnap 同一守卫：期间切到 A 股就直接丢弃这份港股数据
+      if (S.market !== "hk") return;
       var rows = hydrateHK(pack);
       S.rows = rows;
       S.historyReady = true;
@@ -880,7 +882,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       renderAll();
     }).catch(function(err){
       console.warn("港股快照不可用", err);
-      showSnapError(err);
+      if (S.market === "hk") showSnapError(err);
     });
   }
 
@@ -1271,7 +1273,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     if (S.market === "hk") return loadHK();
     return loadASnap().catch(function(err){
       console.warn("A 股快照不可用", err);
-      showSnapError(err);
+      if (S.market === "a") showSnapError(err);
     });
   }
 
@@ -1282,6 +1284,9 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     progress(true);
     $("subline").textContent = "正在读取 A 股快照…";
     return fetchSnapshot("a").then(function(pack){
+      // 回包期间用户可能已经切到港股：这时再写进去会把港股视图覆盖成 A 股，
+      // 表现为副标题说「港股通」、表格却是 4,522 只 A 股。直接丢弃这份结果。
+      if (S.market !== "a") return;
       var rows = hydrateA(pack);
       S.rows = rows;
       S.historyReady = true;
