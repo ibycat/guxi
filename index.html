@@ -296,7 +296,9 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   // 行业名必须与快照里的 f100 完全一致。东财把钢铁拆成了「普钢/特钢/冶钢原料」，
   // 写「钢铁」永远匹配不到，钢铁股就进不了「周期高息」。
   var CYCLE = {};
-  ["煤炭开采","航运港口","炼化及贸易","化学制品","化学原料","普钢","特钢","冶钢原料","工业金属","小金属","贵金属","证券","房地产开发","水泥","玻璃玻纤","农化制品","油服工程","燃气","渔业","种植业"].forEach(function(k){ CYCLE[k] = 1; });
+  // 港股自有一套行业名（煤炭 / 工用运输 / 地产 …），不带上就会让港股「周期高息」永远是 0 条。
+  ["煤炭开采","航运港口","炼化及贸易","化学制品","化学原料","普钢","特钢","冶钢原料","工业金属","小金属","贵金属","证券","房地产开发","水泥","玻璃玻纤","农化制品","油服工程","燃气","渔业","种植业",
+   "煤炭","工用运输","地产","一般金属及矿石","石油及天然气","黄金及贵金属","原材料"].forEach(function(k){ CYCLE[k] = 1; });
 
   var S = {
     rows: [], byCode: {},
@@ -739,8 +741,11 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     return r.ttm;
   }
 
+  // 只认真正的前缀式标记：ST / *ST / 退市 / PT。
+  // 原来用 /ST|退|PT/i 全文匹配，港股 ASMPT 因为名字里带「PT」被当成 ST 剔掉了。
   function isST(name){
-    return /ST|退|PT/i.test(name);
+    var s = String(name || "").trim();
+    return /^\*?ST/i.test(s) || /^退市/.test(s) || /退$/.test(s) || /^PT/i.test(s);
   }
   function isNew(r){
     return r.listDate ? (TODAY - r.listDate) < 3 * 365 * DAY : false;
@@ -1234,7 +1239,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "A股股息率排行_" + (TODAY.getFullYear() + String(TODAY.getMonth() + 1).padStart(2, "0") + String(TODAY.getDate()).padStart(2, "0")) + ".csv";
+    a.download = (S.market === "hk" ? "港股" : "A股") + "股息率排行_" + (TODAY.getFullYear() + String(TODAY.getMonth() + 1).padStart(2, "0") + String(TODAY.getDate()).padStart(2, "0")) + ".csv";
     document.body.appendChild(a);
     a.click();
     setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
