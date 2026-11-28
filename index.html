@@ -493,7 +493,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   /* ---------------- 预生成快照 ----------------
      由 GitHub Actions 每交易日生成两次（北京 16:10 收盘后、次日 07:35 盘前），
-     推到独立的 data 分支。页面首选同源 /api/snap（边缘缓存 + 透传 gzip），
+     推到独立的 data 分支。页面首选同源 /api/snap（边缘缓存 1 小时，压缩由边缘自动完成），
      拿不到时退回 raw.githubusercontent 直读，再不行才回落实时接口。
      这样做同时解决两件事：首屏速度、以及东财对 Cloudflare 出口 IP 的封禁。 */
   var SNAP_RAW = "https://raw.githubusercontent.com/ibycat/guxi/data/";
@@ -687,6 +687,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       S.rows = rows;
       S.historyReady = true;
       S.loadedAt = pack.ts || Date.now();
+      S.asof = pack.asof || "";
       S.fromCache = false;
       var ms = now() - t0;
       progress(false);
@@ -1139,7 +1140,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     });
   }
 
-  // 页面不再拉实时行情：快照每天更新一次，「刷新」只是重新取一次快照（绕过 5 分钟边缘缓存）
+  // 页面不再拉实时行情：快照每天更新，「刷新」只是重新取一次快照（绕过 1 小时边缘缓存）
   function refreshQuotes(){
     if (refreshing) return;
     refreshing = true;
