@@ -59,6 +59,11 @@ const PROXY_HOSTS = new Set([
   "datacenter.eastmoney.com"
 ]);
 const FAIL_SWITCH = 3;
+// 夜间那轮（23:35 UTC）只刷价格：分红方案一天最多变一两次，重抓 24 个报告期要 190 多个请求，
+// 正是把东财出口打出 502 的主因。这里复用上一份快照的聚合值，按价格变化等比缩放
+// （股息率 = 每股派息 / 价格，派息金额没变，价格变了按比例折算即可）。
+const REUSE_DIV = process.env.SNAPSHOT_REUSE_DIV === "1";
+const PREV_DIR = process.env.PREV_DIR || "prev";
 let proxyFirst = !!(PROXY_ENV && !PROXY_OFF); // 显式设置时先走代理
 let directDead = false;                       // 连续失败到阈值就置位，此后一直走代理
 let directStreak = 0;
@@ -366,6 +371,28 @@ const num = (v, dflt) => {
   return Number.isFinite(n) ? n : dflt;
 };
 
+// 复用上一份快照的前提是它本身是「全量产物」：腾讯兜底那份 partial=qq，
+// 标记和分红都是降级值，拿它当基准会把误差越滚越大。
+function loadPrevA() {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(PREV_DIR, "a.json"), "utf8"));
+    const n = String(j.code || "").split("|").length;
+    if (j.partial) {
+      console.log(`[A] 上一份快照是降级产物（partial=${j.partial}），本轮改为全量抓取`);
+      return null;
+    }
+    if (n < 3000) {
+      console.log(`[A] 上一份快照只有 ${n} 行，不足以复用，本轮全量抓取`);
+      return null;
+    }
+    console.log(`[A] 复用上一份快照 ${n} 行（asof ${j.asof}）`);
+    return j;
+  } catch (e) {
+    console.log("[A] 没有可复用的上一份快照，本轮全量抓取");
+    return null;
+  }
+}
+
 async function buildA() {
   console.log("[A] 拉取行情…");
   // 一次查 4 个市场（深主板/创业板/沪主板/科创板）的合并语句在东财侧偏重，
@@ -417,14 +444,20 @@ async function buildA() {
   }
   const partialA = q.okPages < q.pages ? `${q.okPages}/${q.pages}` : "";
 
-  console.log("[A] 拉取分红…");
+  const prevA = REUSE_DIV ? loadPrevA() : null;
+  const reusing = !!prevA;
   const recs = [];
-  for (const p of buildPeriods()) {
-    const rows = await fetchBonusPeriod(p);
-    recs.push(...rows);
-    console.log(`  ${p}: ${rows.length}`);
+  if (reusing) {
+    console.log("[A] 只刷价格：跳过分红抓取，沿用上一份聚合值");
+  } else {
+    console.log("[A] 拉取分红…");
+    for (const p of buildPeriods()) {
+      const rows = await fetchBonusPeriod(p);
+      recs.push(...rows);
+      console.log(`  ${p}: ${rows.length}`);
+    }
+    console.log(`[A] 分红到手 ${recs.length} 条`);
   }
-  console.log(`[A] 分红到手 ${recs.length} 条`);
 
   // 分页是按 SECURITY_CODE 排序的，同一代码有多条记录时顺序不稳定，
   // 翻页有可能把同一条记录返回两次 —— 那会让该股股息率直接翻倍。先按关键字段去重。
@@ -455,6 +488,18 @@ async function buildA() {
       eps: num(r.BASIC_EPS, 0),
       prog: r.ASSIGN_PROGRESS || ""
     });
+  }
+
+  const prevRows = new Map();
+  if (prevA) {
+    const pc = String(prevA.code).split("|");
+    const pfl = String(prevA.fl).split("|");
+    for (let i = 0; i < pc.length; i++) {
+      prevRows.set(pc[i], {
+        px: prevA.px[i], t: prevA.t[i], l: prevA.l[i], a3: prevA.a3[i],
+        po: prevA.po[i], cs: prevA.cs[i], ys: prevA.ys[i], fl: pfl[i] || ""
+      });
+    }
   }
 
   const y0 = TODAY.getFullYear();
@@ -490,6 +535,32 @@ async function buildA() {
     let listYm = 0;
     const ld = num(it.f26, 0);
     if (ld > 19000101) listYm = Math.floor(ld / 100);
+
+    const pv = prevRows.get(code);
+    if (pv) {
+      // 复用分支：派息金额不变，只有价格可能变了，按 oldPx/newPx 等比缩放
+      const k = pv.px > 0 ? pv.px / price : 1;
+      C.code.push(code);
+      C.name.push(it.f14 || code);
+      C.px.push(Math.round(price * 100) / 100);
+      const chgV = num(it.f3, NaN);
+      C.chg.push(Number.isFinite(chgV) ? Math.round(chgV * 100) / 100 : null);
+      const peV = num(it.f9, NaN);
+      C.pe.push(Number.isFinite(peV) ? Math.round(peV * 10) / 10 : null);
+      const pbV = num(it.f23, NaN);
+      C.pb.push(Number.isFinite(pbV) ? Math.round(pbV * 100) / 100 : null);
+      C.mc.push(Math.round(num(it.f20, 0) / 1e8));
+      C.ind.push(indId(ind));
+      C.ld.push(listYm);
+      C.t.push(Math.round(pv.t * k));
+      C.l.push(Math.round(pv.l * k));
+      C.a3.push(Math.round(pv.a3 * k));
+      C.po.push(pv.po);
+      C.cs.push(pv.cs);
+      C.ys.push(pv.ys);
+      C.fl.push(pv.fl);
+      continue;
+    }
 
     const all = byCode.get(code) || [];
     const impl = all.filter((x) => x.prog.includes("实施"));

@@ -8,6 +8,11 @@ on:
     - cron: "10 8 * * *"
     - cron: "35 23 * * *"
   workflow_dispatch:
+    inputs:
+      reuse_div:
+        description: "只刷价格（模拟夜间轮，跳过分红抓取）"
+        type: boolean
+        default: false
   # 改本文件或抓取脚本时自动跑一次，用来验证改动（cron 漂移太大，不能靠定时验证）
   push:
     paths:
@@ -106,6 +111,10 @@ jobs:
         env:
           SNAPSHOT_DIR: out
           SNAPSHOT_PROXY: ${{ steps.probe.outputs.proxy }}
+          # 23:35 UTC 那轮只刷价格：分红一天变不了几次，重抓 24 个报告期要 190+ 请求，
+          # 正是把东财出口打出 502 的主因。上一份若不是全量产物（partial=qq），
+          # 脚本会自己退回全量抓取，所以夜里这轮同时也是「修复轮」。
+          SNAPSHOT_REUSE_DIV: ${{ (github.event.schedule == '35 23 * * *' || inputs.reuse_div == true) && '1' || '' }}
         run: |
           set -o pipefail
           node scripts/snapshot.mjs 2>&1 | tee snap.log
