@@ -1095,7 +1095,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   function saveCache(){
     if (S.market === "hk") return;
     try{
-      var pack = { ts: Date.now(), rows: S.rows.map(function(r){
+      // asof 一起存：断网冷启动时只剩缓存，没有它副标题就说不清是哪天的收盘
+      var pack = { ts: Date.now(), asof: S.asof || "", rows: S.rows.map(function(r){
         return [r.code, r.name, r.price, r.chg, r.pe, r.pb, r.mcap, r.ind, r.listDate ? r.listDate.getTime() : 0,
           Math.round(r.ttm * 1e6), Math.round(r.last * 1e6), Math.round(r.avg3 * 1e6),
           r.payout == null ? -1 : Math.round(r.payout * 1e4), r.consec, r.years, r.ttmCnt,
@@ -1133,7 +1134,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
           })
         };
       });
-      return { ts: pack.ts, rows: rows };
+      return { ts: pack.ts, asof: pack.asof || "", rows: rows };
     }catch(e){ return null; }
   }
 
@@ -1360,16 +1361,19 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     if (cached){
       S.rows = cached.rows;
       S.loadedAt = cached.ts;
+      S.asof = cached.asof || "";
       S.fromCache = true;
       S.historyReady = true;
       S.byCode = {};
       setStatus("ok", "缓存 " + stampDay(cached.ts));
-      $("subline").textContent = "已载入本地缓存（" + stampDay(cached.ts) + "），正在后台更新…";
+      $("subline").textContent = "已载入本地缓存（" + stampDay(cached.ts) + "）" +
+        (S.asof ? "，收盘 " + S.asof : "") + "，正在后台更新…";
       $("hintTime").textContent = "缓存于 " + stampDay(cached.ts);
       renderAll();
       loadFull().catch(function(err){
         progress(false);
         setStatus("ok", "离线 · 缓存 " + stampDay(cached.ts));
+        $("subline").textContent = "网络暂时不可用，正在显示缓存数据" + (S.asof ? "（收盘 " + S.asof + "）" : "");
         console.warn(err);
       });
       return;
