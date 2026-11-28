@@ -1187,7 +1187,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     return out;
   }
 
-  function renderMetrics(list){
+  function renderMetrics(list, checkN){
     var yv = [];
     for (var i = 0; i < list.length; i++){
       var v = currentYield(list[i]);
@@ -1202,6 +1202,9 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       if (r.consec >= 5) cnt5y++;
       if (r.flags.some(function(f){ return f[0] === "bad"; })) cntCheck++;
     }
+    // 「待核验」必须和预设按钮同口径（同一批行、同一判据），
+    // 否则会出现顶部显示 9 只、点进去 13 条的情况
+    if (typeof checkN === "number") cntCheck = checkN;
     $("metrics").innerHTML =
       '<div class="metric"><div class="k">有效样本</div><div class="v num">' + yv.length.toLocaleString() + '<small>只</small></div></div>' +
       '<div class="metric"><div class="k">' + (S.market === "hk" ? "港股中位数" : "全 A 中位数") + '</div><div class="v num">' + pct(median) + '</div></div>' +
@@ -1242,7 +1245,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   var detailState = {};
 
   function loadDetail(r){
-    if (detailState[r.code]) return;
+    // 只有「正在加载」才跳过；失败(3)要允许重试，否则刷新一次也救不回来
+    if (detailState[r.code] === 1) return;
     detailState[r.code] = 1;
     request(BONUS_API, {
       reportName: "RPT_SHAREBONUS_DET",
@@ -1294,7 +1298,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     if (!r.hk && !r.records.length){
       if (!detailState[r.code]) loadDetail(r);
       var hint = detailState[r.code] === 3
-        ? "明细加载失败，稍后重试或点右上「刷新」"
+        ? "明细加载失败，再点一次该行重试（或点右上「刷新」）"
         : "正在加载分红明细…";
       return '<tr class="detail"><td colspan="11"><div class="dbox">' +
         "<div><h4>分红明细（每 10 股派息，税前）</h4>" +
@@ -1393,7 +1397,15 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   }
 
   function renderAll(){
-    renderMetrics(S.rows);
+    // 待核验的条数必须和「待核验」预设点开后看到的一致。
+    // 直接对当前 preset 的 filtered() 计数是不行的：默认挂着「稳健高息」，
+    // 那样只会数到「既稳健又需核验」的两三只，点进去却是全部待核验。
+    // 所以临时切到 check 预设跑一次同一个 filtered()，拿到同一批行再还原。
+    var keep = S.preset;
+    S.preset = "check";
+    var chk = filtered().length;
+    S.preset = keep;
+    renderMetrics(S.rows, chk);
     renderTable();
     renderIndustry(S.rows);
     var inds = {};
@@ -1475,6 +1487,13 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     return z(d.getHours()) + ":" + z(d.getMinutes()) + ":" + z(d.getSeconds());
   }
 
+  // 缓存可能已经是两天前的：只显示 HH:MM:SS 会让人以为就是刚才那份
+  function stampDay(ts){
+    var d = new Date(ts);
+    function z(n){ return n < 10 ? "0" + n : "" + n; }
+    return (d.getMonth() + 1) + "-" + z(d.getDate()) + " " + z(d.getHours()) + ":" + z(d.getMinutes());
+  }
+
   function loadFull(){
     if (S.market === "hk") return loadHK();
     return loadASnap().catch(function(err){
@@ -1517,6 +1536,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     var btn = $("refreshBtn");
     btn.disabled = true;
     FORCE_REFRESH = true;
+    // 刷新要顺手清掉分红明细的失败状态，否则「点刷新恢复」这条路走不通
+    detailState = {};
     setStatus("load", "刷新快照");
     progress(true);
     loadFull().catch(function(err){
@@ -1534,7 +1555,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     // 已经用本地缓存画过表了：这时候网络失败不该把表格清空，
     // 否则「先画缓存、再后台更新」这条路径等于没有 —— 断网反而什么都看不到。
     if (S.rows && S.rows.length){
-      setStatus("warn", "缓存 " + stamp(S.loadedAt));
+      setStatus("warn", "缓存 " + stampDay(S.loadedAt));
       $("subline").textContent = "网络暂时不可用，正在显示缓存数据" +
         (S.asof ? "（收盘 " + S.asof + "）" : "");
       return;
@@ -1626,7 +1647,14 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       var tr = e.target.closest("tr.row");
       if (!tr) return;
       var code = tr.getAttribute("data-code");
-      if (S.open[code]) delete S.open[code]; else S.open[code] = 1;
+      if (S.open[code]){
+        // 明细上次加载失败时，这一下当作「重试」，保持展开并重新拉一次；
+        // 否则只是收起。只允许用户点击触发重试，避免失败后自己循环重试。
+        if (detailState[code] === 3) detailState[code] = 0;
+        else delete S.open[code];
+      } else {
+        S.open[code] = 1;
+      }
       renderTable();
     });
 
@@ -1700,13 +1728,13 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       S.fromCache = true;
       S.historyReady = true;
       S.byCode = {};
-      setStatus("ok", "缓存 " + stamp(cached.ts));
-      $("subline").textContent = "已载入本地缓存，正在后台更新…";
-      $("hintTime").textContent = "缓存于 " + stamp(cached.ts);
+      setStatus("ok", "缓存 " + stampDay(cached.ts));
+      $("subline").textContent = "已载入本地缓存（" + stampDay(cached.ts) + "），正在后台更新…";
+      $("hintTime").textContent = "缓存于 " + stampDay(cached.ts);
       renderAll();
       loadFull().catch(function(err){
         progress(false);
-        setStatus("ok", "离线 · 缓存 " + stamp(cached.ts));
+        setStatus("ok", "离线 · 缓存 " + stampDay(cached.ts));
         console.warn(err);
       });
       return;

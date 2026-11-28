@@ -238,6 +238,10 @@ tbody tr:hover{background:#FCFBF8;}
       for (var d = 0; d < dRows.length; d++){
         if (dRows[d] && dRows[d].c) byDetail[dRows[d].c] = dRows[d];
       }
+      // 详情快照拉不到时，det 全是空对象。若照旧判定「没有成立日 = 未成立」，
+      // 整表都会被标成未成立并被默认隐藏，用户只会看到「没有符合条件的基金」。
+      var detailOk = dRows.length > 0;
+      S.detailOk = detailOk;
       var byMgr = {};
       var mrRows = (mgr && mgr.rows) || {};
       for (var k in mrRows) if (Object.prototype.hasOwnProperty.call(mrRows, k)) byMgr[k] = mrRows[k];
@@ -273,8 +277,9 @@ tbody tr:hover{background:#FCFBF8;}
           idx: det.idx || "",
           d: isNum(mm.d) ? mm.d : null,
           a: isNum(mm.a) ? mm.a : null,
-          // 没有成立日的都是还没成立的新发基金，源站没有规模/类型
-          nf: !det.est,
+          // 没有成立日的都是还没成立的新发基金，源站没有规模/类型。
+          // 但详情快照整个没拉到时不成立，那只是缺数据。
+          nf: detailOk && !det.est,
           // 没有最新净值的多是已终止/已折算的份额，它的阶段收益是历史残值，
           // 比如 960033 净值序列停在 2020-05-26，近一年却显示 304%
           dead: r.nav == null,
@@ -303,7 +308,8 @@ tbody tr:hover{background:#FCFBF8;}
       $("subline").textContent = "共 " + rows.length.toLocaleString() + " 只 · 有规模 " +
         wS.toLocaleString() + " · 有经理数据 " + wA.toLocaleString() +
         " · 无净值 " + dead.toLocaleString() + " · 收益异常 " + odd.toLocaleString() +
-        " · 未成立 " + nf.toLocaleString();
+        " · 未成立 " + nf.toLocaleString() +
+        (detailOk ? "" : " · ⚠ 详情快照不可用（类型/规模/成立日缺失，未成立判定已跳过）");
       renderTable();
     }).catch(function(err){
       $("subline").textContent = "基金数据暂时取不到";
