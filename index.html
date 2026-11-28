@@ -927,7 +927,10 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       if (!detailState[r.code]) loadDetail(r);
       var hint = detailState[r.code] === 3
         ? "明细加载失败，再点一次该行重试（或点右上「刷新」）"
-        : "正在加载分红明细…";
+        : detailState[r.code] === 2
+          // 加载成功但一条都没有：不能一直停在「正在加载」，否则看着像卡死
+          ? "该股没有已实施的现金分红记录（近十年未派现，或分红数据未收录）"
+          : "正在加载分红明细…";
       return '<tr class="detail"><td colspan="11"><div class="dbox">' +
         "<div><h4>分红明细（每 10 股派息，税前）</h4>" +
         "<div style='color:var(--ink3);font-size:11.5px;padding:8px 0'>" + hint + "</div></div>" +

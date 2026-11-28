@@ -37,7 +37,10 @@ header{position:sticky; top:0; z-index:20; background:rgba(246,246,243,.95); bac
 .toolbar input[type="number"]{width:66px;}
 .toolbar select{padding:6px 8px; border:1px solid var(--line); border-radius:7px; font-size:12px; font-family:inherit; background:var(--panel); color:var(--ink); max-width:170px;}
 .lbl{font-size:11.5px; color:var(--ink3); margin-left:4px;}
-.rangebox{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink3);}
+.rangebox{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink3); flex-wrap:nowrap;}
+/* 窄屏下 flex 会把按钮挤成方块、文字竖排，这里禁止换行并保证不收缩 */
+.rangebox>*{white-space:nowrap; flex:0 0 auto;}
+.rangebox input[type=date]{flex:0 1 auto; min-width:0;}
 .tblwrap{overflow-x:auto;}
 table{width:100%; border-collapse:collapse; font-size:12.5px;}
 thead th{text-align:left; font-weight:500; color:var(--ink3); font-size:11.5px; padding:9px 9px; border-bottom:1px solid var(--line); background:#FCFBF8; white-space:nowrap; cursor:pointer; user-select:none;}
