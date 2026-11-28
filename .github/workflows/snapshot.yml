@@ -60,9 +60,22 @@ jobs:
           echo "push2 返回 $code"
           if [ "$code" = "200" ]; then
             echo "blocked=false" >> "$GITHUB_OUTPUT"
+            echo "proxy=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 直连不行不代表源站不行：Runner 出口在境外，东财常按 IP 拦。
+          # 改走本站 /api/em 的边缘代理（Cloudflare 出口），通了就照常抓全量分红。
+          pcode=$(curl -s -m 15 -o /dev/null -w "%{http_code}" \
+            "https://guxi-6em.pages.dev/api/em?u=$(printf %s "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=1&po=0&np=1&fltt=2&invt=2&fid=f12&fs=m:0+t:6&fields=f12" | jq -sRr @uri)" || echo 000)
+          echo "代理返回 $pcode"
+          if [ "$pcode" = "200" ]; then
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            echo "proxy=https://guxi-6em.pages.dev/api/em" >> "$GITHUB_OUTPUT"
+            echo "东财直连不可用（$code），改走边缘代理抓取" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "blocked=true" >> "$GITHUB_OUTPUT"
-            echo "东财行情接口不可用（$code），本轮直接走腾讯兜底" >> "$GITHUB_STEP_SUMMARY"
+            echo "proxy=" >> "$GITHUB_OUTPUT"
+            echo "东财直连与代理都不可用（$code / $pcode），本轮走腾讯兜底" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: 生成快照
@@ -72,6 +85,7 @@ jobs:
         timeout-minutes: 16
         env:
           SNAPSHOT_DIR: out
+          SNAPSHOT_PROXY: ${{ steps.probe.outputs.proxy }}
         run: |
           set -o pipefail
           node scripts/snapshot.mjs 2>&1 | tee snap.log
@@ -84,6 +98,7 @@ jobs:
         timeout-minutes: 6
         env:
           SNAPSHOT_DIR: out
+          SNAPSHOT_PROXY: ${{ steps.probe.outputs.proxy }}
         run: |
           set -o pipefail
           echo "第一次抓取失败，45 秒后重试" >> "$GITHUB_STEP_SUMMARY"

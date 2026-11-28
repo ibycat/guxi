@@ -43,6 +43,25 @@ const PUSH2_HOSTS = [
   "push2delay.eastmoney.com"
 ];
 
+// GitHub Runner 在境外，直连东财经常吃 302 / 限流，只能退回腾讯兜底（价格能更，
+// 分红数据更新不了）。设了 SNAPSHOT_PROXY 就改走本站 /api/em 的边缘代理：
+// 请求由 Cloudflare 边缘发出，出口不是 Runner 的 IP；代理失败再退回直连，本地照常能用。
+const PROXY = (process.env.SNAPSHOT_PROXY || "").trim().replace(/[?&]+$/, "");
+const PROXY_HOSTS = new Set([
+  "push2.eastmoney.com",
+  "datacenter-web.eastmoney.com",
+  "datacenter.eastmoney.com"
+]);
+function proxyUrl(u) {
+  if (!PROXY) return null;
+  let host;
+  try { host = new URL(u).host; } catch (e) { return null; }
+  if (!PROXY_HOSTS.has(host)) return null; // 编号镜像不在代理白名单里，走直连
+  return PROXY + (PROXY.indexOf("?") >= 0 ? "&" : "?") + "u=" + encodeURIComponent(u);
+}
+// 有代理时只用主域名：编号镜像是为了绕开「同 IP 按域名限流」，代理出口本来就不是 Runner
+const ACTIVE_HOSTS = PROXY ? ["push2.eastmoney.com"] : PUSH2_HOSTS;
+
 const PATH_CLIST = "/api/qt/clist/get";
 const DATACENTER = "https://datacenter-web.eastmoney.com/api/data/v1/get";
 const HK_DIV = "https://datacenter.eastmoney.com/securities/api/data/v1/get";
@@ -81,6 +100,17 @@ const DEADLINE = Date.now() + 14 * 60 * 1000;
 
 async function rawGet(url) {
   if (Date.now() > DEADLINE) throw new Error("deadline_exceeded");
+  const p = proxyUrl(url);
+  if (!p) return rawGetOnce(url);
+  try {
+    return await rawGetOnce(p);
+  } catch (e) {
+    // 代理挂了不代表源站也挂，退回直连再试一次
+    return rawGetOnce(url);
+  }
+}
+
+async function rawGetOnce(url) {
   if (USE_CURL) {
     const { stdout } = await execFileP(
       "curl",
@@ -123,11 +153,11 @@ let IP_BLOCKED = false;
 async function getRotating(buildUrl, triesPerHost = 2, budgetMs = 30000) {
   const start = Date.now();
   let last;
-  for (let i = 0; i < PUSH2_HOSTS.length; i++) {
+  for (let i = 0; i < ACTIVE_HOSTS.length; i++) {
     if (Date.now() - start > budgetMs) break;
-    const idx = (hostCursor + i) % PUSH2_HOSTS.length;
+    const idx = (hostCursor + i) % ACTIVE_HOSTS.length;
     try {
-      const text = await getText(buildUrl(PUSH2_HOSTS[idx]), triesPerHost);
+      const text = await getText(buildUrl(ACTIVE_HOSTS[idx]), triesPerHost);
       hostCursor = idx;
       return text;
     } catch (e) {
