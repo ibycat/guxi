@@ -210,7 +210,7 @@ tbody tr:hover{background:#FCFBF8;}
     // 数据到位前先禁用这个下拉：不禁用的话选「≥5 年」会看起来没生效（其实是不该生效）
     var sel = $("exp");
     if (sel) sel.disabled = true;
-    get("managers").then(function(mg){
+    return get("managers").then(function(mg){
       var mrows = (mg && mg.rows) || [];
       for (var i = 0; i < mrows.length; i++){
         var m = mrows[i];
@@ -250,7 +250,8 @@ tbody tr:hover{background:#FCFBF8;}
   function load(){
     // managers.json 有 3.2MB，但只用到一个「经理从业年限」筛选值。
     // 放在首屏并发里会让表格多等一次大文件，改成先出表、后台补（见 loadExpYears）。
-    $("subline").textContent = "正在读取基金数据（合计约 7MB，首次稍慢）…";
+    // 有缓存先画了表，就别再用「正在读取」把它盖掉
+    if (!(S.rows && S.rows.length)) $("subline").textContent = "正在读取基金数据（合计约 7MB，首次稍慢）…";
     Promise.all([
       get("fundrank").catch(function(){ return { rows: [] }; }),
       get("funddetail").catch(function(){ return { rows: [] }; }),
@@ -318,29 +319,12 @@ tbody tr:hover{background:#FCFBF8;}
       }
 
       if (!rows.length) throw new Error("数据为空");
-      S.rows = rows;
-
-      var types = {};
-      for (var z = 0; z < rows.length; z++) if (rows[z].t) types[rows[z].t] = (types[rows[z].t] || 0) + 1;
-      var opt = '<option value="">全部类型</option>';
-      Object.keys(types).sort(function(a, b){ return types[b] - types[a]; }).forEach(function(tt){
-        opt += '<option value="' + tt + '">' + tt + "（" + types[tt] + "）</option>";
-      });
-      $("t").innerHTML = opt;
-
-      var wS = rows.filter(function(x){ return isNum(x.gs); }).length;
-      var wA = rows.filter(function(x){ return isNum(x.a); }).length;
-      var nf = rows.filter(function(x){ return x.nf; }).length;
-      var dead = rows.filter(function(x){ return x.dead; }).length;
-      var odd = rows.filter(function(x){ return x.odd; }).length;
-      $("subline").textContent = "共 " + rows.length.toLocaleString() + " 只 · 有规模 " +
-        wS.toLocaleString() + " · 有经理数据 " + wA.toLocaleString() +
-        " · 无净值 " + dead.toLocaleString() + " · 收益异常 " + odd.toLocaleString() +
-        " · 未成立 " + nf.toLocaleString() +
-        (detailOk ? "" : " · ⚠ 详情快照不可用（类型/规模/成立日缺失，未成立判定已跳过）");
-      renderTable();
-      loadExpYears(rows, nameToId, expById);
+      paintRows(rows, detailOk);
+      // 等年限补完再落缓存，下次命中时「年限 ≥ N」就是立刻可用的
+      loadExpYears(rows, nameToId, expById).then(function(){ cachePut(rows, detailOk); });
     }).catch(function(err){
+      // 有缓存时不要再把已经画好的表盖成错误页
+      if (S.rows && S.rows.length) return;
       $("subline").textContent = "基金数据暂时取不到";
       $("tbody").innerHTML = '<tr><td colspan="12"><div class="error">数据加载失败：' +
         (err && err.message ? err.message : "未知错误") + "</div></td></tr>";
@@ -584,8 +568,85 @@ tbody tr:hover{background:#FCFBF8;}
     $("sd").value = fmt(new Date(t.getTime() - 365 * 864e5));
   })();
 
+  // 快照一天只更新两次，重复访问没必要每次重下 2MB 多（gzip 后）。
+  // 用 IndexedDB 存一份构建好的行数据：命中就先画，再后台拉最新覆盖。
+  // 不用 localStorage 是因为 2 万行序列化后超过 5MB 配额。
+  var IDB_NAME = "guxi_fund", IDB_STORE = "rows", CACHE_VER = 1;
+  var CACHE_TTL = 12 * 3600 * 1000;
+
+  function idbOpen(){
+    return new Promise(function(res, rej){
+      if (!window.indexedDB) return rej(new Error("no_idb"));
+      var rq = indexedDB.open(IDB_NAME, 1);
+      rq.onupgradeneeded = function(){ rq.result.createObjectStore(IDB_STORE); };
+      rq.onsuccess = function(){ res(rq.result); };
+      rq.onerror = function(){ rej(rq.error || new Error("idb_open")); };
+    });
+  }
+  function cacheGet(){
+    return idbOpen().then(function(db){
+      return new Promise(function(res, rej){
+        var tx = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get("latest");
+        tx.onsuccess = function(){ res(tx.result || null); };
+        tx.onerror = function(){ rej(tx.error); };
+      });
+    });
+  }
+  function cachePut(rows, detailOk){
+    return idbOpen().then(function(db){
+      return new Promise(function(res, rej){
+        var st = db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE);
+        var rq = st.put({ v: CACHE_VER, ts: Date.now(), rows: rows, detailOk: detailOk !== false }, "latest");
+        rq.onsuccess = function(){ res(true); };
+        rq.onerror = function(){ rej(rq.error); };
+      });
+    }).catch(function(){ /* 存不下就算了，不影响使用 */ });
+  }
+
+  function fmtStamp(ts){
+    var d = new Date(ts), z = function(v){ return v < 10 ? "0" + v : "" + v; };
+    return z(d.getMonth() + 1) + "-" + z(d.getDate()) + " " + z(d.getHours()) + ":" + z(d.getMinutes());
+  }
+
+  // 把一批行数据画出来（缓存命中和正常加载共用，避免两套渲染逻辑跑偏）
+  function paintRows(rows, detailOk, cachedTs){
+    S.rows = rows;
+    var types = {};
+    for (var z = 0; z < rows.length; z++) if (rows[z].t) types[rows[z].t] = (types[rows[z].t] || 0) + 1;
+    var opt = '<option value="">全部类型</option>';
+    Object.keys(types).sort(function(a, b){ return types[b] - types[a]; }).forEach(function(tt){
+      opt += '<option value="' + tt + '">' + tt + "（" + types[tt] + "）</option>";
+    });
+    $("t").innerHTML = opt;
+
+    var wS = rows.filter(function(x){ return isNum(x.gs); }).length;
+    var wA = rows.filter(function(x){ return isNum(x.a); }).length;
+    var nf = rows.filter(function(x){ return x.nf; }).length;
+    var dead = rows.filter(function(x){ return x.dead; }).length;
+    var odd = rows.filter(function(x){ return x.odd; }).length;
+    $("subline").textContent =
+      (cachedTs ? "缓存于 " + fmtStamp(cachedTs) + " · 正在后台更新 · " : "") +
+      "共 " + rows.length.toLocaleString() + " 只 · 有规模 " +
+      wS.toLocaleString() + " · 有经理数据 " + wA.toLocaleString() +
+      " · 无净值 " + dead.toLocaleString() + " · 收益异常 " + odd.toLocaleString() +
+      " · 未成立 " + nf.toLocaleString() +
+      (detailOk ? "" : " · ⚠ 详情快照不可用（类型/规模/成立日缺失，未成立判定已跳过）");
+    renderTable();
+  }
+
+  function bootWithCache(){
+    cacheGet().then(function(hit){
+      if (hit && hit.v === CACHE_VER && hit.rows && hit.rows.length &&
+          Date.now() - hit.ts < CACHE_TTL){
+        // 缓存里记过「详情快照不可用」，命中时别把它当成正常数据
+        paintRows(hit.rows, hit.detailOk !== false, hit.ts);
+      }
+      load();
+    }).catch(function(){ load(); });
+  }
+
   bind();
-  load();
+  bootWithCache();
 })();
 </script>
 </body>
