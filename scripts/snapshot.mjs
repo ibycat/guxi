@@ -246,7 +246,16 @@ function buildPeriods() {
   }
   const hist = [];
   for (let k = 1; k <= HISTORY_YEARS; k++) hist.push(y - k + "-12-31");
-  return Array.from(new Set(ttm.concat(hist)));
+  // 财年聚合（上年股息率 / 近3年均值 / 连分年数 / 近6年分红年数）必须拿到该财年的中期分红。
+  // 原来只有「近 18 个月的季末 + 近 6 个年报」，2 年前的 06-30、09-30 完全取不到：
+  // 焦点科技 2024 中期每 10 股派 5.5 元被漏掉，近 3 年均值从 4.16% 掉到 3.49%；
+  // 诺德股份 2023-03-31 那笔也漏了，均值直接归零。
+  const mid = [];
+  for (let k = 1; k <= HISTORY_YEARS; k++) {
+    mid.push(y - k + "-06-30", y - k + "-09-30");
+    if (k <= 3) mid.push(y - k + "-03-31"); // 季报分红的窗口只需覆盖近 3 年
+  }
+  return Array.from(new Set(ttm.concat(hist, mid)));
 }
 
 async function fetchBonusPeriod(period) {
@@ -763,8 +772,8 @@ async function main() {
       const text = JSON.stringify(pack);
       fs.writeFileSync(path.join(outDir, name + ".json"), text);
       // 不再产出 .json.gz：/api/snap 返回的是 JSON 文本，压缩由 Cloudflare 边缘
-      // 按 Accept-Encoding 自动完成。预压缩副本没有任何消费者，
-      // 每个交易日只是往 data 分支多塞 170KB 死重量。
+      // 按 Accept-Encoding 自动完成。早期那份预压缩副本没有任何消费者，
+      // 每个交易日还要往 data 分支塞 170KB 死重量。
       const n = pack.rows
         ? pack.rows.length
         : String(pack.code || "").split("|").filter(Boolean).length;
