@@ -1,4 +1,4 @@
-// Cloudflare Pages Function: /api/snap?f=a|hk|fund
+// Cloudflare Pages Function: /api/snap?f=a|hk|fundrank|funddetail|fundmgr|mgrmap|managers
 //
 // 快照同源代理。快照本体放在仓库的 data 分支（由 GitHub Actions 每天生成），
 // raw.githubusercontent.com 在国内访问又慢又不稳，所以这里做一层同源代理：
@@ -80,7 +80,7 @@ export async function onRequest(context) {
 
   const u = new URL(request.url);
   const f = u.searchParams.get("f");
-  const ALLOWED = ["a", "hk", "fund", "fundrank", "funddetail", "fundmgr", "mgrmap", "managers"];
+  const ALLOWED = ["a", "hk", "fundrank", "funddetail", "fundmgr", "mgrmap", "managers"];
   if (ALLOWED.indexOf(f) < 0) return jsonError("bad_f", 400);
 
   // 客户端带版本号：快照格式一变就能整体失效旧缓存，不用等 5 分钟
