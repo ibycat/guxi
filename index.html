@@ -1128,7 +1128,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     for (var i = 0; i < S.rows.length; i++){
       var r = S.rows[i];
       if (S.exST && isST(r.name)) continue;
-      if (isNew(r)) continue;
+      // 次新是硬过滤、没有开关，搜索时也要放开，否则搜上市不满 3 年的股票永远是 0 条
+      if (!q && isNew(r)) continue;
       if (S.ind && r.ind !== S.ind) continue;
       if (S.capmin && !(r.mcap >= S.capmin)) continue;
       var yv = currentYield(r);
@@ -1136,9 +1137,13 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       // 「稳健高息」直接按快照里的「稳健」标记筛，不再另立门槛：
       // 标记本身已经包含股息率、连续分红年数、分红率区间的判据（见 scripts/snapshot.mjs），
       // 两边各写一套就会出现「标了稳健、预设里却找不到」的割裂。
-      if (S.preset === "steady"){ if (!r.flags.some(function(f){ return f[0] === "good" && f[1] === "稳健"; })) continue; }
-      if (S.preset === "cycle"){ if (!(CYCLE[r.ind] && yv >= 0.035)) continue; }
-      if (S.preset === "check"){ if (!r.flags.some(function(f){ return f[0] === "bad" || f[1] === "周期高位"; })) continue; }
+      // 一旦输入了搜索词，就不再套预设：预设默认是「稳健高息」，
+      // 而像万科这种已经停发股息的股票不在池子里，搜名字会得到 0 条，
+      // 很像搜索坏了。搜索的语义是「在全市场里找这只」，不是「在筛选结果里找」。
+      var notScoped = !q;
+      if (notScoped && S.preset === "steady"){ if (!r.flags.some(function(f){ return f[0] === "good" && f[1] === "稳健"; })) continue; }
+      if (notScoped && S.preset === "cycle"){ if (!(CYCLE[r.ind] && yv >= 0.035)) continue; }
+      if (notScoped && S.preset === "check"){ if (!r.flags.some(function(f){ return f[0] === "bad" || f[1] === "周期高位"; })) continue; }
       if (q){
         if (nrm(r.name).indexOf(nq) < 0 && r.code.indexOf(q) < 0) continue;
       }
