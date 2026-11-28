@@ -65,9 +65,17 @@ jobs:
           fi
           # 直连不行不代表源站不行：Runner 出口在境外，东财常按 IP 拦。
           # 改走本站 /api/em 的边缘代理（Cloudflare 出口），通了就照常抓全量分红。
-          pcode=$(curl -s -m 15 -o /dev/null -w "%{http_code}" \
-            "https://guxi-6em.pages.dev/api/em?u=$(printf %s "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=1&po=0&np=1&fltt=2&invt=2&fid=f12&fs=m:0+t:6&fields=f12" | jq -sRr @uri)" || echo 000)
-          echo "代理返回 $pcode"
+          # 代理偶发 502（边缘函数瞬时抖动），单次探测定生死会把整轮误判成「都不可用」，
+          # 之前就因此白掉了一次全量抓取。这里重试 3 次，任意一次 200 就算通。
+          target="https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=1&po=0&np=1&fltt=2&invt=2&fid=f12&fs=m:0+t:6&fields=f12"
+          pcode=""
+          for attempt in 1 2 3; do
+            pcode=$(curl -s -m 20 -o /dev/null -w "%{http_code}" \
+              "https://guxi-6em.pages.dev/api/em?u=$(printf %s "$target" | jq -sRr @uri)" || echo 000)
+            echo "代理第 $attempt 次返回 $pcode"
+            [ "$pcode" = "200" ] && break
+            sleep 4
+          done
           if [ "$pcode" = "200" ]; then
             echo "blocked=false" >> "$GITHUB_OUTPUT"
             echo "proxy=https://guxi-6em.pages.dev/api/em" >> "$GITHUB_OUTPUT"
