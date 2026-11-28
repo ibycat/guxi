@@ -63,7 +63,7 @@ jobs:
           blocked=true
           proxy=""
           for round in 1 2 3; do
-            code=$(curl -s -m 10 -o /dev/null -w "%{http_code}" -A "Mozilla/5.0" "$target" || echo 000)
+            code=$(curl -s -m 10 -o /dev/null -w "%{http_code}" -A "Mozilla/5.0" "$target") || code=000
             echo "第 $round 轮 直连返回 $code"
             if [ "$code" = "200" ]; then
               blocked=false
@@ -74,7 +74,7 @@ jobs:
             # 代理偶发 502（边缘函数瞬时抖动），单次失败不算数，每轮给它两次机会。
             pcode=""
             for attempt in 1 2; do
-              pcode=$(curl -s -m 20 -o /dev/null -w "%{http_code}" "https://guxi-6em.pages.dev/api/em?u=$enc" || echo 000)
+              pcode=$(curl -s -m 20 -o /dev/null -w "%{http_code}" "https://guxi-6em.pages.dev/api/em?u=$enc") || pcode=000
               echo "第 $round 轮 代理第 $attempt 次返回 $pcode"
               [ "$pcode" = "200" ] && break
               sleep 3
