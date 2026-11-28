@@ -33,7 +33,7 @@ header{position:sticky; top:0; z-index:20; background:rgba(246,246,243,.94); bac
 .hd-right{display:flex; align-items:center; gap:10px;}
 .status{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink2);}
 .dot{width:7px; height:7px; border-radius:50%; background:var(--ink3); flex:none;}
-.dot.load{background:#D89B2B;} .dot.ok{background:var(--green);} .dot.err{background:var(--red);}
+.dot.load{background:#D89B2B;} .dot.warn{background:#D89B2B;} .dot.ok{background:var(--green);} .dot.err{background:var(--red);}
 .btn{appearance:none; border:1px solid var(--line); background:var(--panel); color:var(--ink); font-size:12px; padding:6px 12px; border-radius:7px; cursor:pointer; font-family:inherit;}
 .btn:hover{border-color:#CFCEC8;}
 .btn:disabled{opacity:.5; cursor:default;}
@@ -187,7 +187,6 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
           <button class="on" data-mk="a">A 股</button>
           <button data-mk="hk">港股</button>
         </div>
-        <label class="chk" id="hkAllWrap" style="display:none"><input type="checkbox" id="hkAll">含全部港股</label>
         <span class="mktip" id="mkTip"></span>
       </div>
       <div class="tabs">
@@ -269,7 +268,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     <b>更新频率</b>：A 股与港股快照每交易日生成两次 —— 北京 16:10（收盘后）与次日 07:35（盘前补一次）。页面读快照并在本地缓存 48 小时，打开时先画缓存、再后台更新，页头的「快照时间」就是数据时点。<br>
     数据来源：东方财富公开行情与分红送配接口。快照由 GitHub Actions 生成，分红口径按已实施除权计算。<br>
     「TTM」= 近 12 个月内已实施除权的现金分红合计 ÷ 收盘价；「上年年报」= 上一完整会计年度分红 ÷ 收盘价；「近 3 年平均」= 近 3 个年度派息合计 ÷ 收盘价 ÷ 年数。<br>
-    A股：分红率为上年年报每 10 股派息 ÷ 10 ÷ 上年基本每股收益。<b>港股</b>：仅计入港币现金派息，美元/人民币派息单列标记且不计入股息率；默认港股通标的（约 668 只），可切换全部港股并自动剔除股价 &lt; 1 港元或市值 &lt; 20 亿港元的仙股。<br>
+    A股：分红率为该财年合计派息 ÷ 该财年基本每股收益。<b>港股</b>：仅计入港币现金派息，美元/人民币派息折算后计入并单列标记；范围为港股通标的（约 668 只）。<br>
     <b>注意：本页是数据工具，不是交易依据。</b>行情来自公开接口整理，可能与交易所、券商的实际成交价或公告存在时差；<b>选出标的后请到交易所网站、券商客户端，或天天基金等官方渠道核对最新价格、分红方案与公告，再决定是否买入</b>。本页面不构成投资建议。
   </footer>
 </div>
@@ -299,8 +298,10 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   var TODAY = new Date(); TODAY.setHours(0,0,0,0);
   var DAY = 86400000;
 
+  // 行业名必须与快照里的 f100 完全一致。东财把钢铁拆成了「普钢/特钢/冶钢原料」，
+  // 写「钢铁」永远匹配不到，钢铁股就进不了「周期高息」。
   var CYCLE = {};
-  ["煤炭开采","航运港口","炼化及贸易","化学制品","化学原料","钢铁","工业金属","小金属","贵金属","证券","房地产开发","水泥","玻璃玻纤","农化制品","油服工程","燃气","渔业","种植业"].forEach(function(k){ CYCLE[k] = 1; });
+  ["煤炭开采","航运港口","炼化及贸易","化学制品","化学原料","普钢","特钢","冶钢原料","工业金属","小金属","贵金属","证券","房地产开发","水泥","玻璃玻纤","农化制品","油服工程","燃气","渔业","种植业"].forEach(function(k){ CYCLE[k] = 1; });
 
   var S = {
     rows: [], byCode: {},
@@ -910,13 +911,24 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   // 快照超过 3 天没更新说明上游抓取一直失败，页面必须显式提醒，
   // 否则用户会拿一份过期数据当今天的行情看。
+  // 按「交易日」算间隔，而不是自然日：周末两天不产生新快照，
+  // 用自然日会在每周一稳定误报「已 3 天未更新」（周五到周一正好 3 天）。
+  function bizDaysAfter(from, to){
+    var n = 0;
+    for (var t = from.getTime() + 86400000; t < to.getTime(); t += 86400000){
+      var w = new Date(t).getDay();
+      if (w !== 0 && w !== 6) n++;
+    }
+    return n;
+  }
+
   function checkStale(asof){
     var el = $("staleBar");
     if (!el) return;
     if (!asof){ el.style.display = "none"; return; }
     var d = new Date(asof + "T00:00:00");
     if (isNaN(d)) { el.style.display = "none"; return; }
-    var days = Math.round((TODAY - d) / (24 * 3600 * 1000));
+    var days = bizDaysAfter(d, TODAY);
     if (days >= 3){
       el.textContent = "⚠ 数据已 " + days + " 天未更新（最近一份快照是 " + asof + "）。上游抓取可能持续失败，页面上的价格与股息率仅供参照。";
       el.style.display = "block";
@@ -1086,7 +1098,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       var ms = now() - t0;
       progress(false);
       setStatus("ok", "快照 " + stamp(S.loadedAt));
-      $("subline").textContent = (S.hkAll ? "全部港股 " : "港股通 ") + rows.length.toLocaleString() +
+      $("subline").textContent = "港股通 " + rows.length.toLocaleString() +
         " 只 · 首屏 " + (ms / 1000).toFixed(2) + "s · 收盘 " + (pack.asof || "—") +
         (pack.partial === "qq" ? " · 行情为腾讯兜底（东财接口不可用）"
           : pack.partial ? " · 部分分页未取到（" + pack.partial + "）" : "");
@@ -1349,7 +1361,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
         var cls = !isFinite(chg) ? "flat" : (chg > 0 ? "up" : (chg < 0 ? "down" : "flat"));
         var chgTxt = !isFinite(chg) ? "—" : (chg > 0 ? "+" : "") + chg.toFixed(2) + "%";
         html += '<tr class="row" data-code="' + r.code + '">' +
-          '<td class="rank' + (i < 3 && S.sortKey === "y" && S.sortDir === -1 ? " top" : "") + '">' + (start + i + 1) + "</td>" +
+          '<td class="rank' + ((start + i) < 3 && S.sortKey === "y" && S.sortDir === -1 ? " top" : "") + '">' + (start + i + 1) + "</td>" +
           '<td><span class="nm">' + r.name + '</span><span class="code num">' + r.code + '</span><span class="ind hide-sm">' + (r.ind || "") + "</span></td>" +
           '<td class="r num">' + fmtPrice(r.price) + "</td>" +
           '<td class="r num ' + cls + '">' + chgTxt + "</td>" +
@@ -1482,6 +1494,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       S.rows = rows;
       S.historyReady = true;
       S.loadedAt = pack.ts || Date.now();
+      S.asof = pack.asof || "";
       S.fromCache = false;
       try { saveCache(); } catch (e) { /* 忽略 */ }
       var ms = now() - t0;
@@ -1518,6 +1531,14 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
 
   function showSnapError(err){
     progress(false);
+    // 已经用本地缓存画过表了：这时候网络失败不该把表格清空，
+    // 否则「先画缓存、再后台更新」这条路径等于没有 —— 断网反而什么都看不到。
+    if (S.rows && S.rows.length){
+      setStatus("warn", "缓存 " + stamp(S.loadedAt));
+      $("subline").textContent = "网络暂时不可用，正在显示缓存数据" +
+        (S.asof ? "（收盘 " + S.asof + "）" : "");
+      return;
+    }
     setStatus("err", "快照不可用");
     $("subline").textContent = "快照暂时取不到";
     $("tbody").innerHTML = '<tr><td colspan="11"><div class="error">快照数据暂时取不到（' +
@@ -1649,7 +1670,6 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       $("ind").innerHTML = '<option value="">全部行业</option>';
       document.querySelectorAll("#presets button").forEach(function(o){ o.classList.remove("on"); });
       document.querySelector('#presets button[data-preset="steady"]').classList.add("on");
-      $("hkAllWrap").style.display = (mk === "hk") ? "inline-flex" : "none";
       $("hintFilter").textContent = (mk === "hk") ? "仙股" : (S.exST ? "ST / " : "") + "次新";
       $("mkTip").textContent = (mk === "hk") ? "仅港币现金派息计入股息率；美元/人民币派息单列标记" : "";
       $("tbody").innerHTML = '<tr><td colspan="11"><div class="skel">数据加载中…</div></td></tr>';
@@ -1662,15 +1682,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       });
     });
 
-    $("hkAll").addEventListener("change", function(e){
-      S.hkAll = e.target.checked;
-      if (S.market !== "hk") return;
-      S.rows = [];
-      S.page = 1;
-      $("tbody").innerHTML = '<tr><td colspan="11"><div class="skel">数据加载中…</div></td></tr>';
-      setStatus("load", "加载中");
-      loadFull().catch(function(err){ progress(false); setStatus("err", "加载失败"); console.warn(err); });
-    });
+    // 「含全部港股」开关已下线：快照只覆盖港股通标的（约 668 只），
+    // 开关原本只改副标题、不改数据，属于假功能。要做全量港股需要另建一份快照。
 
     $("refreshBtn").addEventListener("click", function(){
       if (S.rows.length) refreshQuotes(); else boot();

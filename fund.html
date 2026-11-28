@@ -381,6 +381,9 @@ tbody tr:hover{background:#FCFBF8;}
       for (var i = 0; i < slice.length; i++){
         var r = slice[i];
         var rc = S.range ? S.range.map[r.c] : null;
+        // 无净值/收益异常的行，区间收益也要跟着置空，否则同一行三列是「—」、
+        // 区间列却还挂着一个带颜色的数字，口径不一致
+        var rcShow = (r.dead || r.odd) ? null : rc;
         html += "<tr>" +
           '<td class="num">' + (start + i + 1) + "</td>" +
           '<td><span class="nm">' + r.n + '</span><span class="code num">' + r.c + "</span>" +
@@ -397,7 +400,7 @@ tbody tr:hover{background:#FCFBF8;}
           '<td class="r num ' + ((r.dead || r.odd) ? "flat" : cls(r.y1)) + '">' + ((r.dead || r.odd) ? "—" : signed(r.y1)) + "</td>" +
           '<td class="r num ' + ((r.dead || r.odd) ? "flat" : cls(r.y3)) + '">' + ((r.dead || r.odd) ? "—" : signed(r.y3)) + "</td>" +
           '<td class="r num ' + ((r.dead || r.odd) ? "flat" : cls(r.ytd)) + '">' + ((r.dead || r.odd) ? "—" : signed(r.ytd)) + "</td>" +
-          (S.range ? '<td class="r num ' + cls(num(rc)) + '">' + signed(num(rc)) + "</td>" : "") +
+          (S.range ? '<td class="r num ' + cls(num(rcShow)) + '">' + signed(num(rcShow)) + "</td>" : "") +
           '<td class="r num">' + (r.est || "—") + "</td>" +
           "</tr>";
       }
@@ -467,17 +470,26 @@ tbody tr:hover{background:#FCFBF8;}
 
   function exportCsv(){
     var list = filtered();
-    var head = ["排名","代码","名称","类型","合并规模(亿)","份额数","基金经理","在管规模(亿)","任职天数","近1年","近3年","今年来","成立日","基金全称"];
+    var hasRange = !!S.range;
+    var head = ["排名","代码","名称","类型","合并规模(亿)","份额数","基金经理","在管规模(亿)","任职天数","近1年","近3年","今年来"];
+    // 屏幕上有区间收益、CSV 里却没有，导出结果没法复核（排序还是按它排的）
+    if (hasRange) head.push("区间收益");
+    head.push("成立日","基金全称");
     var lines = [head.join(",")];
     for (var i = 0; i < list.length; i++){
       var r = list[i];
-      lines.push([
+      var row = [
         i + 1, r.c, '"' + String(r.n).replace(/"/g, '""') + '"', r.t,
         r.gs == null ? "" : r.gs, r.gn || "", '"' + (r.jj || "") + '"',
         r.a == null ? "" : r.a, r.d == null ? "" : r.d,
-        r.y1 == null ? "" : r.y1, r.y3 == null ? "" : r.y3, r.ytd == null ? "" : r.ytd,
-        r.est || "", '"' + String(r.full).replace(/"/g, '""') + '"'
-      ].join(","));
+        r.y1 == null ? "" : r.y1, r.y3 == null ? "" : r.y3, r.ytd == null ? "" : r.ytd
+      ];
+      if (hasRange){
+        var rc = (r.dead || r.odd) ? null : S.range.map[r.c];
+        row.push(rc == null ? "" : rc);
+      }
+      row.push(r.est || "", '"' + String(r.full).replace(/"/g, '""') + '"');
+      lines.push(row.join(","));
     }
     var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
     var a = document.createElement("a");
