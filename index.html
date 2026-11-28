@@ -642,11 +642,19 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       var pe = pes[i], pb = pbs[i], cg = chgs[i];
       var payout = pack.po[i] < 0 ? null : pack.po[i] / 1e4;
       var flags = parseFlags(fls[i]);
-      // 快照里也标了同一个标记，但兜底快照会沿用上一次的 fl，标记要等主抓取成功才更新。
-      // 这里按数值补一次，保证「显示 >150%」和「有口径异常标签」永远同时出现。
-      if (payout != null && payout > PAYOUT_CAP &&
-          !flags.some(function(f){ return f[1] === "分红率异常"; })){
-        flags.push(["warn", "分红率异常"]);
+      // 分红率 >150% 的三种成因要分开标（亏损年 / EPS 口径失真 / 真高派息）。
+      // 快照里也标了同样三条，但兜底快照沿用上一份的 fl，标记要等主抓取成功才更新；
+      // 这里按数值补一次，保证「显示 >150%」和「有对应标签」永远同时出现。
+      var PAY_TAGS = ["亏损派息", "EPS口径存疑", "分红率异常"];
+      var hasPayTag = flags.some(function(f){ return PAY_TAGS.indexOf(f[1]) >= 0; });
+      if (payout != null && payout > PAYOUT_CAP && !hasPayTag){
+        // ratio = 源站 EPS ÷ 市场隐含 EPS(price/pe) = 上年股息率 × PE ÷ 分红率
+        var ratio = pe > 0 ? (pack.l[i] / 1e4) * pe / payout : null;
+        var payTag;
+        if (pe == null || !isFinite(pe)) payTag = "分红率异常";  // 没有 PE 数据，退回通用标签
+        else if (pe <= 0) payTag = "亏损派息";
+        else payTag = (ratio != null && ratio < 0.6) ? "EPS口径存疑" : "分红率异常";
+        flags.push(["warn", payTag]);
       }
       out[i] = {
         code: codes[i], name: names[i], price: pack.px[i],

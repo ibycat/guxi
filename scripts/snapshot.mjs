@@ -481,11 +481,21 @@ async function buildA() {
     // 会出现「上年股息率 18%」配「无分红」标签的自相矛盾（硕世生物就是这样）
     if (ttm <= 0 && last <= 0) flags.push("none:无分红");
     if (ttm > 0 && consec <= 1) flags.push("warn:分红不连续");
-    if (payout != null && payout > 0.9) flags.push("warn:分红率>90%");
-    // 超过 150% 基本都是源站 EPS 口径问题：亏损年（大亚圣象 2025 EPS 0.02 对
-    // 每股派 0.19）、追溯调整、或 EPS 只覆盖了部分期间。算出来是 950%，摆出来
-    // 只会让人以为页面算错，单独标一个口径异常。
-    if (payout != null && payout > 1.5) flags.push("warn:分红率异常");
+    // 分红率超过 150% 的三种成因完全不同，不能一律叫「异常」：
+    //   1) 亏损年（动态 PE<=0）：EPS 为负，分红率本身没有意义 —— 大亚圣象 EPS 0.02
+    //   2) EPS 口径失真：源站年报 EPS 明显低于市场隐含（price/PE）—— 厦门国贸派 11 元
+    //      对 EPS 报出 1100%，实际是那份 EPS 只覆盖了部分期间
+    //   3) 真高派息：EPS 对得上，就是派得多 —— 五粮液 224%、华兰生物 194%
+    const peNow = num(it.f9, NaN);
+    const epsMkt = peNow > 0 && price > 0 ? price / peNow : null;
+    if (payout != null && payout > 1.5) {
+      if (!Number.isFinite(peNow)) flags.push("warn:分红率异常");        // 没有 PE，退回通用标签
+      else if (peNow <= 0) flags.push("warn:亏损派息");
+      else if (epsMkt > 0 && lastF.eps < epsMkt * 0.6) flags.push("warn:EPS口径存疑");
+      else flags.push("warn:分红率异常");
+    } else if (payout != null && payout > 0.9) {
+      flags.push("warn:分红率>90%");
+    }
     if (ttm > 0.08 && CYCLE.has(ind)) flags.push("warn:周期高位");
     if (ttm > 0.1) flags.push("bad:需核验");
     if (annualInWin >= 2) flags.push("info:含2次年报");
