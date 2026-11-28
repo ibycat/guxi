@@ -25,11 +25,10 @@
    │
    └─ 兜底：实时聚合
         /api/em?u=...   单接口代理（分级缓存 + 分页预热）──► 东方财富
-        /api/hk?mode=... 港股聚合（边缘侧拉全部分页）    ──► 东方财富
              └─ 都不可用（静态托管 / 本地 file://）→ JSONP 直连
 ```
 
-- `index.html`：单文件应用（内联 CSS / JS），只依赖同源 `/api/em`
+- `index.html`：单文件应用（内联 CSS / JS），只依赖同源 `/api/em` 与 `/api/snap`
 - `functions/api/em.js`：同源代理
   - 域名白名单：`push2.eastmoney.com`、`datacenter-web.eastmoney.com`、`datacenter.eastmoney.com`
   - 剔除 JSONP 回调参数与 `_` 时间戳（否则边缘缓存永不命中）
