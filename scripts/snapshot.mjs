@@ -373,22 +373,25 @@ const num = (v, dflt) => {
 
 // 复用上一份快照的前提是它本身是「全量产物」：腾讯兜底那份 partial=qq，
 // 标记和分红都是降级值，拿它当基准会把误差越滚越大。
-function loadPrevA() {
+// 两个市场共用：A 股读 prev/a.json（列式，行数看 code 的段数），
+// 港股读 prev/hk.json（行式，行数看 rows.length）。
+function loadPrev(market, minRows) {
+  const tag = market === "hk" ? "HK" : "A";
   try {
-    const j = JSON.parse(fs.readFileSync(path.join(PREV_DIR, "a.json"), "utf8"));
-    const n = String(j.code || "").split("|").length;
+    const j = JSON.parse(fs.readFileSync(path.join(PREV_DIR, market + ".json"), "utf8"));
+    const n = j.rows ? j.rows.length : String(j.code || "").split("|").length;
     if (j.partial) {
-      console.log(`[A] 上一份快照是降级产物（partial=${j.partial}），本轮改为全量抓取`);
+      console.log(`[${tag}] 上一份快照是降级产物（partial=${j.partial}），本轮改为全量抓取`);
       return null;
     }
-    if (n < 3000) {
-      console.log(`[A] 上一份快照只有 ${n} 行，不足以复用，本轮全量抓取`);
+    if (n < minRows) {
+      console.log(`[${tag}] 上一份快照只有 ${n} 行，不足以复用，本轮全量抓取`);
       return null;
     }
-    console.log(`[A] 复用上一份快照 ${n} 行（asof ${j.asof}）`);
+    console.log(`[${tag}] 复用上一份快照 ${n} 行（asof ${j.asof}）`);
     return j;
   } catch (e) {
-    console.log("[A] 没有可复用的上一份快照，本轮全量抓取");
+    console.log(`[${tag}] 没有可复用的上一份快照，本轮全量抓取`);
     return null;
   }
 }
@@ -444,7 +447,7 @@ async function buildA() {
   }
   const partialA = q.okPages < q.pages ? `${q.okPages}/${q.pages}` : "";
 
-  const prevA = REUSE_DIV ? loadPrevA() : null;
+  const prevA = REUSE_DIV ? loadPrev("a", 3000) : null;
   const reusing = !!prevA;
   const recs = [];
   if (reusing) {
@@ -801,8 +804,19 @@ async function buildHK() {
   }
   const hkAsof = hkMaxTs > 0 ? new Date((hkMaxTs + 8 * 3600) * 1000).toISOString().slice(0, 10) : null;
 
-  const from = ymd(new Date(TODAY.getFullYear() - HISTORY_YEARS, 0, 1));
-  const divs = await fetchHKDiv(from);
+  // 港股派息一次要翻 22 页，同样是夜间轮的主要请求来源：
+  // 派息方案一天变不了几次，复用上一份的聚合值即可。
+  const prevHK = REUSE_DIV ? loadPrev("hk", 600) : null;
+  let divs = [];
+  if (prevHK) {
+    console.log("[HK] 只刷价格：跳过派息抓取，沿用上一份聚合值");
+  } else {
+    const from = ymd(new Date(TODAY.getFullYear() - HISTORY_YEARS, 0, 1));
+    divs = await fetchHKDiv(from);
+  }
+
+  const prevRows = new Map();
+  if (prevHK) for (const r of prevHK.rows) prevRows.set(r[0], r);
 
   const byCode = new Map();
   for (const r of divs) {
@@ -825,6 +839,22 @@ async function buildHK() {
     if (!/^0\d{4}$/.test(c || "")) continue;
     const price = num(it.f2, 0) || num(it.f18, 0);
     if (!(price > 0)) continue;
+
+    // 复用分支：派息明细没变，只有价格可能变了，按 oldPx/newPx 等比缩放三个股息率。
+    // 下标 14 的派息明细串必须原样保留 —— 页面展开某一行时要直接读它。
+    const pv = prevRows.get(c);
+    if (pv) {
+      const k = pv[2] > 0 ? pv[2] / price : 1;
+      const pbV = num(it.f23, NaN);
+      rows.push([
+        c, it.f14 || c, price,
+        num(it.f3, NaN), num(it.f9, NaN), num(it.f20, 0), String(it.f100 || ""),
+        Math.round(pv[7] * k), Math.round(pv[8] * k), Math.round(pv[9] * k),
+        pv[10], pv[11], pv[12], pv[13], pv[14],
+        Number.isFinite(pbV) ? Math.round(pbV * 100) / 100 : null
+      ]);
+      continue;
+    }
 
     // 同一笔分红会被分页接口返回两次（民生银行 2025 中期出现两条一模一样的记录），
     // 不去重会让 last 直接翻倍：11.40% vs 真实 6.63%
