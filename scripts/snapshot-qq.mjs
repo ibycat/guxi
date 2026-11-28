@@ -29,6 +29,18 @@ function arg(name, def) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// 最近一个「已经收盘」的交易日（北京时间）。兜底只换价格、不产生新行情，
+// 所以 asof 必须是这个日期，而不是抓取当天的日期 —— 否则周末/封禁期每跑一次
+// 都把 asof 刷成今天，页面永远认为数据是新的，stale 提示形同虚设。
+// 15:00 前跑（盘前 07:35 那次）看到的还是上一个交易日的收盘价，要往前推一天。
+function lastCloseDate() {
+  const bj = new Date(Date.now() + 8 * 3600e3);
+  const d = new Date(Date.UTC(bj.getUTCFullYear(), bj.getUTCMonth(), bj.getUTCDate()));
+  if (bj.getUTCHours() < 15) d.setUTCDate(d.getUTCDate() - 1);
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function findPrev(name, explicit) {
   if (explicit && fs.existsSync(explicit)) return explicit;
   for (const d of [PREV_DIR, OUT_DIR, "."]) {
@@ -145,12 +157,18 @@ async function runA() {
     a3.push(Math.round((prev.a3[i] || 0) * k));
   }
 
+  // 价格一笔没动 = 沿用上一份的收盘价（周末、节假日、封禁期都这样）。
+  // 这时候必须沿用上一份的 asof，否则 ts 被刷成今天、页面以为刚更新过，
+  // 「数据已 N 天未更新」的提示永远不会触发。
+  const moved = codes.filter((c, i) => quotes.get(c) && quotes.get(c).px !== prev.px[i]).length;
+  const asof = lastCloseDate();
+
   const pack = {
     v: 3,
     ts: Date.now(),
     market: "a",
     years: prev.years,
-    asof: new Date().toISOString().slice(0, 10),
+    asof,
     partial: "qq",
     inds: prev.inds,
     code: prev.code,
@@ -168,8 +186,7 @@ async function runA() {
   const outPath = arg("out", path.join(OUT_DIR, "a.json"));
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(pack));
-  const moved = codes.filter((c, i) => quotes.get(c) && quotes.get(c).px !== prev.px[i]).length;
-  console.log("[QQ-A] 写出 " + outPath + "，" + codes.length + " 只（更新 " + hit + "，价格变动 " + moved + "，无行情保留 " + kept + "）");
+  console.log("[QQ-A] 写出 " + outPath + "，" + codes.length + " 只（更新 " + hit + "，价格变动 " + moved + "，asof " + asof + "，无行情保留 " + kept + "）");
 }
 
 /* ------------------------------ 港股 ------------------------------ */
@@ -207,12 +224,15 @@ async function runHK() {
     return row;
   });
 
+  // 与 A 股同一口径：asof 取最近已收盘交易日，不取抓取当天
+  const asof = lastCloseDate();
+
   const pack = {
     v: prev.v || 2,
     ts: Date.now(),
     market: "hk",
     years: prev.years,
-    asof: new Date().toISOString().slice(0, 10),
+    asof,
     partial: "qq",
     rows: out
   };
@@ -220,7 +240,7 @@ async function runHK() {
   const outPath = arg("out-hk", path.join(OUT_DIR, "hk.json"));
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(pack));
-  console.log("[QQ-HK] 写出 " + outPath + "，" + out.length + " 只（价格变动 " + moved + "，无行情保留 " + kept + "）");
+  console.log("[QQ-HK] 写出 " + outPath + "，" + out.length + " 只（价格变动 " + moved + "，asof " + asof + "，无行情保留 " + kept + "）");
 }
 
 /* ------------------------------ 入口 ------------------------------ */
