@@ -575,7 +575,9 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     var bust = Math.floor(Date.now() / 600000) + (FORCE_REFRESH ? "r" + Date.now() : "");
     // 同源代理优先（走 Cloudflare 边缘、国内快），失败再直连 GitHub raw
     var nc = FORCE_REFRESH ? "&nocache=1" : "";
-    return getJson("/api/snap?f=" + name + "&v=4" + nc + "&t=" + bust)
+    // v 是边缘缓存的版本号：快照内容口径变了就 +1，让旧缓存整体失效，
+    // 不用等 1 小时 TTL 过期（v4→v5 改了分红率三分类标记，旧快照的 fl 要作废）
+    return getJson("/api/snap?f=" + name + "&v=5" + nc + "&t=" + bust)
       .catch(function(err){
         console.warn("快照同源代理不可用，直连 raw", err);
         return getJson(SNAP_RAW + name + ".json?t=" + bust);
@@ -654,6 +656,8 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
         if (pe == null || !isFinite(pe)) payTag = "分红率异常";  // 没有 PE 数据，退回通用标签
         else if (pe <= 0) payTag = "亏损派息";
         else payTag = (ratio != null && ratio < 0.6) ? "EPS口径存疑" : "分红率异常";
+        // 旧缓存快照的 fl 里还带着「分红率>90%」，会和新标签并存，先剔掉再补
+        flags = flags.filter(function(f){ return f[1] !== "分红率>90%"; });
         flags.push(["warn", payTag]);
       }
       out[i] = {
