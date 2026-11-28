@@ -13,7 +13,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import zlib from "node:zlib";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -749,16 +748,14 @@ async function main() {
       const pack = await fn();
       const text = JSON.stringify(pack);
       fs.writeFileSync(path.join(outDir, name + ".json"), text);
-      // 同时产出预压缩版本：Pages Function 免费版 CPU 只有 10ms，
-      // 在函数里 gzip 大 JSON 会超限，所以压缩在这里（Actions 机器上）做完，
-      // 函数侧只做字节透传。
-      const gz = zlib.gzipSync(Buffer.from(text, "utf8"), { level: 9 });
-      fs.writeFileSync(path.join(outDir, name + ".json.gz"), gz);
+      // 不再产出 .json.gz：/api/snap 返回的是 JSON 文本，压缩由 Cloudflare 边缘
+      // 按 Accept-Encoding 自动完成。预压缩副本没有任何消费者，
+      // 每个交易日只是往 data 分支多塞 170KB 死重量。
       const n = pack.rows
         ? pack.rows.length
         : String(pack.code || "").split("|").filter(Boolean).length;
       console.log(
-        `OK ${name}.json  ${(text.length / 1024).toFixed(0)}KB  →  gz ${(gz.length / 1024).toFixed(0)}KB  ${n} 行`
+        `OK ${name}.json  ${(text.length / 1024).toFixed(0)}KB  ${n} 行`
       );
       okCount++;
     } catch (e) {

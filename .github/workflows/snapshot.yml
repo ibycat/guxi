@@ -132,22 +132,10 @@ jobs:
               echo "本轮已生成 $b"
             elif [ -s "prev/$b.json" ]; then
               cp "prev/$b.json" "out/$b.json"
-              # 旧副本可能没有预压缩版本，先一并带过来
-              [ -s "prev/$b.json.gz" ] && cp "prev/$b.json.gz" "out/$b.json.gz"
               echo "本轮 $b 失败，沿用上一次的副本"
             fi
-          done
-
-          # 保证每个存在的快照都有预压缩版本：
-          # /api/snap 只做字节透传，没有 .gz 就只能现场压缩（会吃 CPU），
-          # 所以这里兜底补生成一次，旧产物也能立刻享受零压缩开销。
-          for b in a hk; do
-            if [ -s "out/$b.json" ] && [ ! -s "out/$b.json.gz" ]; then
-              gzip -9 -n -c "out/$b.json" > "out/$b.json.gz"
-              echo "补生成 $b.json.gz"
-            fi
             if [ -s "out/$b.json" ]; then
-              echo "OK $b.json $(wc -c < "out/$b.json") bytes → gz $(wc -c < "out/$b.json.gz" 2>/dev/null || echo 0) bytes"
+              echo "OK $b.json $(wc -c < "out/$b.json") bytes"
             fi
           done
 
@@ -178,12 +166,6 @@ jobs:
               console.log('$b 环比 ' + p + ' → ' + c);
               if (p && c < p * 0.9) { console.error('$b 行数回退 ' + p + ' → ' + c + '，拒绝发布'); process.exit(1); }
             "
-          done
-
-          # 预压缩产物必须是合法 gzip（魔术字节 1f 8b）
-          for g in out/a.json.gz out/hk.json.gz; do
-            [ -s "$g" ] || continue
-            head -c 2 "$g" | od -An -tx1 | grep -q "1f 8b" && echo "$g gzip ok" || { echo "$g 不是合法 gzip"; exit 1; }
           done
 
       # 只有校验通过才推送。原来这里是 if: always()，校验失败照样把半截 JSON 推上分支，
