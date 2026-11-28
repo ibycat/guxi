@@ -148,6 +148,18 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   .metric .v{font-size:19px;}
   .hide-sm{display:none;}
   .dbox{grid-template-columns:1fr;}
+  /* 窄屏：明细表改成「标签 / 值」两列堆叠。展开行是 colspan=11 的宽单元格，
+     不限制宽度的话内容会跟着表格一起变宽，必须横滚才能看全。 */
+  .detail>td{padding:0;}
+  .dbox{max-width:calc(100vw - 18px);}
+  .dtable{display:block;}
+  .dtable thead{display:none;}
+  .dtable tbody{display:block;}
+  .dtable tr{display:block; padding:7px 0; border-bottom:1px solid var(--line2);}
+  .dtable tr:last-child{border-bottom:0;}
+  .dtable td{display:flex; justify-content:space-between; gap:14px; padding:1px 0; border:0;}
+  .dtable td[data-l]:before{content:attr(data-l); color:var(--ink3); flex:0 0 auto;}
+  .dtable td.num{text-align:right; font-variant-numeric:tabular-nums;}
   .hd-right{width:100%; justify-content:space-between;}
 }
 </style>
@@ -951,7 +963,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       empty = "<tr><td colspan='3' style='color:var(--ink3)'>无可用派息记录</td></tr>";
       for (var i = 0; i < recs.length; i++){
         var x = recs[i];
-        rowsHtml += "<tr><td>" + (x.year || "—") + " " + (x.type || "") + "</td><td class='r num'>" + x.dps.toFixed(3) + " " + x.ccy + "</td><td>" + (x.ex || "—") + "</td></tr>";
+        rowsHtml += "<tr><td data-l='年度 / 类型'>" + (x.year || "—") + " " + (x.type || "") + "</td><td class='r num' data-l='每股派息'>" + x.dps.toFixed(3) + " " + x.ccy + "</td><td data-l='除净日'>" + (x.ex || "—") + "</td></tr>";
       }
     } else {
       title = "分红明细（每 10 股派息，税前）";
@@ -959,7 +971,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       empty = "<tr><td colspan='4' style='color:var(--ink3)'>无可用的已实施分红记录</td></tr>";
       for (var j = 0; j < recs.length; j++){
         var y = recs[j];
-        rowsHtml += "<tr><td>" + y.period + "</td><td class='r num'>" + (y.dps * 10).toFixed(2) + "</td><td>" + (y.ex || "—") + "</td><td>" + y.prog + "</td></tr>";
+        rowsHtml += "<tr><td data-l='报告期'>" + y.period + "</td><td class='r num' data-l='派息'>" + (y.dps * 10).toFixed(2) + "</td><td data-l='除权除息日'>" + (y.ex || "—") + "</td><td data-l='进度'>" + y.prog + "</td></tr>";
       }
     }
     if (!rowsHtml) rowsHtml = empty;
