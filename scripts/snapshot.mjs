@@ -482,6 +482,10 @@ async function buildA() {
     if (ttm <= 0 && last <= 0) flags.push("none:无分红");
     if (ttm > 0 && consec <= 1) flags.push("warn:分红不连续");
     if (payout != null && payout > 0.9) flags.push("warn:分红率>90%");
+    // 超过 150% 基本都是源站 EPS 口径问题：亏损年（大亚圣象 2025 EPS 0.02 对
+    // 每股派 0.19）、追溯调整、或 EPS 只覆盖了部分期间。算出来是 950%，摆出来
+    // 只会让人以为页面算错，单独标一个口径异常。
+    if (payout != null && payout > 1.5) flags.push("warn:分红率异常");
     if (ttm > 0.08 && CYCLE.has(ind)) flags.push("warn:周期高位");
     if (ttm > 0.1) flags.push("bad:需核验");
     if (annualInWin >= 2) flags.push("info:含2次年报");

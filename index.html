@@ -475,6 +475,14 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     if (v == null || !isFinite(v)) return "—";
     return (v * 100).toFixed(d == null ? 2 : d) + "%";
   }
+  // 分红率超过 150% 基本都是源站 EPS 口径问题（亏损年 / 追溯调整 / EPS 只覆盖部分期间），
+  // 直接把 950% 摆出来会让人以为算错，显示成 >150% 更诚实。原始数值仍留在快照和 CSV 里。
+  var PAYOUT_CAP = 1.5;
+  function fmtPayout(v){
+    if (v == null || !isFinite(v)) return "—";
+    if (v > PAYOUT_CAP) return ">150%";
+    return pct(v, 0);
+  }
   function fmtCap(v){
     if (!v || !isFinite(v)) return "—";
     var y = v / 1e8;
@@ -632,6 +640,14 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     for (var i = 0; i < codes.length; i++){
       var ym = pack.ld[i] || 0;
       var pe = pes[i], pb = pbs[i], cg = chgs[i];
+      var payout = pack.po[i] < 0 ? null : pack.po[i] / 1e4;
+      var flags = parseFlags(fls[i]);
+      // 快照里也标了同一个标记，但兜底快照会沿用上一次的 fl，标记要等主抓取成功才更新。
+      // 这里按数值补一次，保证「显示 >150%」和「有口径异常标签」永远同时出现。
+      if (payout != null && payout > PAYOUT_CAP &&
+          !flags.some(function(f){ return f[1] === "分红率异常"; })){
+        flags.push(["warn", "分红率异常"]);
+      }
       out[i] = {
         code: codes[i], name: names[i], price: pack.px[i],
         chg: cg == null ? NaN : cg,
@@ -641,9 +657,9 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
         ind: inds[pack.ind[i]] || "",
         listDate: ym ? new Date(Math.floor(ym / 100), (ym % 100) - 1, 1) : null,
         ttm: pack.t[i] / 1e4, last: pack.l[i] / 1e4, avg3: pack.a3[i] / 1e4,
-        payout: pack.po[i] < 0 ? null : pack.po[i] / 1e4,
+        payout: payout,
         consec: pack.cs[i], years: pack.ys[i], ttmCnt: 0,
-        flags: parseFlags(fls[i]),
+        flags: flags,
         records: []
       };
     }
@@ -887,7 +903,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
       "<span>上年年报</span><span class='num'>" + pct(r.last) + "</span>" +
       "<span>近 3 年均值</span><span class='num'>" + pct(r.avg3) + "</span>" +
       "<span>连续分红</span><span class='num'>" + (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") + "（近 " + HISTORY_YEARS + " 年 " + r.years + " 次）</span>" +
-      "<span>分红率</span><span class='num'>" + (r.payout == null ? "—" : pct(r.payout, 0)) + "</span>" +
+      "<span>分红率</span><span class='num'>" + fmtPayout(r.payout) + "</span>" +
       "<span>总市值</span><span class='num'>" + fmtCap(r.mcap) + "</span>" +
       "<span>PE / PB</span><span class='num'>" + (isFinite(r.pe) && r.pe !== 0 ? r.pe.toFixed(1) : "—") + " / " + (isFinite(r.pb) && r.pb !== 0 ? r.pb.toFixed(2) : "—") + "</span>" +
       "<span>所属行业</span><span>" + (r.ind || "—") + "</span>" +
@@ -979,7 +995,7 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
           '<td class="r num ' + cls + '">' + chgTxt + "</td>" +
           '<td class="r"><span class="yield num">' + pct(yv) + "</span></td>" +
           '<td class="r num">' + (S.historyReady ? (r.consec ? (r.consec >= HISTORY_YEARS ? HISTORY_YEARS + "+ 年" : r.consec + " 年") : "—") : "<span style=\"color:var(--ink3)\">…</span>") + "</td>" +
-          '<td class="r num">' + (r.payout == null ? "—" : pct(r.payout, 0)) + "</td>" +
+          '<td class="r num">' + fmtPayout(r.payout) + "</td>" +
           '<td class="r num">' + fmtCap(r.mcap) + "</td>" +
           '<td class="r num">' + (isFinite(r.pe) && r.pe !== 0 ? r.pe.toFixed(1) : "—") + "</td>" +
           '<td class="r num">' + (isFinite(r.pb) && r.pb !== 0 ? r.pb.toFixed(2) : "—") + "</td>" +
