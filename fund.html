@@ -240,6 +240,7 @@ tbody tr:hover{background:#FCFBF8;}
   // 用户已经在搜索的话，重画一次让新命中的行出现。
   var extrasReady = false;
   var extrasMap = null;
+  var extrasJob = null;
   function applyExtras(rows){
     if (!extrasMap || !rows) return;
     for (var j = 0; j < rows.length; j++){
@@ -248,7 +249,9 @@ tbody tr:hover{background:#FCFBF8;}
   }
   function loadExtras(){
     if (extrasReady) return Promise.resolve();
-    return get("fundextra").then(function(pack){
+    // 主题框是逐字输入的，每个字符都会进来一次；单飞，避免连发好几份 316KB
+    if (extrasJob) return extrasJob;
+    extrasJob = get("fundextra").then(function(pack){
       var map = Object.create(null);
       var list = (pack && pack.rows) || [];
       for (var i = 0; i < list.length; i++){
@@ -257,8 +260,13 @@ tbody tr:hover{background:#FCFBF8;}
       extrasMap = map;
       extrasReady = true;
       applyExtras(S.rows);
-      if (S.q.trim()) renderTable();
+      // 主题框的匹配本来就含 bench，拉到了要重画，否则用户看到的还是拆之前的命中数
+      if (S.q.trim() || S.theme.trim()) renderTable();
       cachePut(S.rows, S.detailOk !== false);
+    }, function(err){
+      // 失败放开单飞，下次输入还能再试
+      extrasJob = null;
+      throw err;
     }).catch(function(){ /* 拉不到就只是搜不到基准原文，不影响其它 */ });
   }
 
@@ -557,11 +565,8 @@ tbody tr:hover{background:#FCFBF8;}
   }
 
   function bind(){
-    $("q").addEventListener("input", function(e){
-      S.q = e.target.value; S.page = 1; renderTable();
-      // 业绩基准拆在 fundextra 里，只有真去搜索才需要它
-      if (S.q.trim() && !extrasReady) loadExtras();
-    });
+    // 名称/代码框不读 bench，别在这里补拉 fundextra（白拉 316KB 且对结果毫无影响）
+    $("q").addEventListener("input", function(e){ S.q = e.target.value; S.page = 1; renderTable(); });
     $("theme").addEventListener("input", function(e){
       S.theme = e.target.value; S.page = 1; renderTable();
       // 真正读 bench 的是这个「主题/行业关键词」框，所以这里也要触发补拉
