@@ -43,15 +43,26 @@ const PUSH2_HOSTS = [
   "push2delay.eastmoney.com"
 ];
 
-// GitHub Runner 在境外，直连东财经常吃 302 / 限流，只能退回腾讯兜底（价格能更，
-// 分红数据更新不了）。设了 SNAPSHOT_PROXY 就改走本站 /api/em 的边缘代理：
-// 请求由 Cloudflare 边缘发出，出口不是 Runner 的 IP；代理失败再退回直连，本地照常能用。
-const PROXY = (process.env.SNAPSHOT_PROXY || "").trim().replace(/[?&]+$/, "");
+// GitHub Runner 在境外，直连东财常被 302 / 限流（本地直连没问题，所以不能写死只看代理）。
+// 这里的策略是「自动换道」，不用人工去配：
+//   1) 显式设了 SNAPSHOT_PROXY → 一开始就走代理（代理失败仍退回直连）
+//   2) 没设 → 先直连；连续 FAIL_SWITCH 次失败就判定直连被墙，本轮改走代理并一直用下去，
+//      不会每个请求都先白等 15 秒超时
+//   3) 代理地址有默认值（本站边缘代理），只有显式写 SNAPSHOT_PROXY=off 才彻底关掉
+const DEFAULT_PROXY = "https://guxi-6em.pages.dev/api/em";
+const PROXY_ENV = (process.env.SNAPSHOT_PROXY || "").trim();
+const PROXY_OFF = /^(off|none|0|false|direct)$/i.test(PROXY_ENV);
+const PROXY = PROXY_OFF ? "" : (PROXY_ENV || DEFAULT_PROXY).replace(/[?&]+$/, "");
 const PROXY_HOSTS = new Set([
   "push2.eastmoney.com",
   "datacenter-web.eastmoney.com",
   "datacenter.eastmoney.com"
 ]);
+const FAIL_SWITCH = 3;
+let proxyFirst = !!(PROXY_ENV && !PROXY_OFF); // 显式设置时先走代理
+let directDead = false;                       // 连续失败到阈值就置位，此后一直走代理
+let directStreak = 0;
+
 function proxyUrl(u) {
   if (!PROXY) return null;
   let host;
@@ -59,8 +70,10 @@ function proxyUrl(u) {
   if (!PROXY_HOSTS.has(host)) return null; // 编号镜像不在代理白名单里，走直连
   return PROXY + (PROXY.indexOf("?") >= 0 ? "&" : "?") + "u=" + encodeURIComponent(u);
 }
-// 有代理时只用主域名：编号镜像是为了绕开「同 IP 按域名限流」，代理出口本来就不是 Runner
-const ACTIVE_HOSTS = PROXY ? ["push2.eastmoney.com"] : PUSH2_HOSTS;
+// 走代理时只用主域名：编号镜像是为了绕开「同 IP 按域名限流」，代理出口本来就不是 Runner
+function activeHosts() {
+  return proxyFirst || directDead ? ["push2.eastmoney.com"] : PUSH2_HOSTS;
+}
 
 const PATH_CLIST = "/api/qt/clist/get";
 const DATACENTER = "https://datacenter-web.eastmoney.com/api/data/v1/get";
@@ -102,11 +115,27 @@ async function rawGet(url) {
   if (Date.now() > DEADLINE) throw new Error("deadline_exceeded");
   const p = proxyUrl(url);
   if (!p) return rawGetOnce(url);
+
+  if (proxyFirst || directDead) {
+    try {
+      return await rawGetOnce(p);
+    } catch (e) {
+      if (directDead) throw e;      // 直连已判定不可用，不再浪费一次超时
+      return rawGetOnce(url);        // 代理偶尔抽风，退回直连试一次
+    }
+  }
+
   try {
-    return await rawGetOnce(p);
+    const text = await rawGetOnce(url);
+    directStreak = 0;
+    return text;
   } catch (e) {
-    // 代理挂了不代表源站也挂，退回直连再试一次
-    return rawGetOnce(url);
+    directStreak++;
+    if (directStreak >= FAIL_SWITCH && !directDead) {
+      directDead = true;
+      console.error(`[net] 直连连续失败 ${directStreak} 次（${e.message}），本轮改用边缘代理`);
+    }
+    return rawGetOnce(p);            // 这一次先用代理兜住，不丢页
   }
 }
 
@@ -153,11 +182,12 @@ let IP_BLOCKED = false;
 async function getRotating(buildUrl, triesPerHost = 2, budgetMs = 30000) {
   const start = Date.now();
   let last;
-  for (let i = 0; i < ACTIVE_HOSTS.length; i++) {
+  const hosts = activeHosts();
+  for (let i = 0; i < hosts.length; i++) {
     if (Date.now() - start > budgetMs) break;
-    const idx = (hostCursor + i) % ACTIVE_HOSTS.length;
+    const idx = (hostCursor + i) % hosts.length;
     try {
-      const text = await getText(buildUrl(ACTIVE_HOSTS[idx]), triesPerHost);
+      const text = await getText(buildUrl(hosts[idx]), triesPerHost);
       hostCursor = idx;
       return text;
     } catch (e) {

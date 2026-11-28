@@ -125,6 +125,7 @@ GitHub Actions (cron 每日 2 次) ──► scripts/snapshot.mjs ──► data
 - **只抓收盘数据，不追实时**：每天跑两次（16:10 收盘后、07:35 开盘前兜底），抓的是静态收盘价而不是盘中行情。页面也不再拉实时行情，「刷新」只是重新取一次快照。这样上游请求量与访问量彻底脱钩，是最不容易被限流的做法
 - 为什么要用 Actions 而不用 Cloudflare Cron：Pages Functions 没有 Cron Trigger；更关键的是**东财对 Cloudflare 出口 IP 有风控**，抓多了直接 502，而 GitHub Runner 的出口 IP 完全不同
 - 为什么快照不提交到 `main`：Pages 免费版每月只有 **500 次构建**，每 30 分钟一次会打爆配额。改为独立的 `data` 分支 + 单提交 force-push，既不影响构建配额，也不会撑大 `main` 的历史
+- **抓取通道全自动切换，不用人工干预**：`snapshot.mjs` 默认直连东财；连续 3 次失败即判定 Runner 出口被拦，本轮改走本站 `/api/em` 边缘代理并一直用下去（不会每个请求都白等一次 15 秒超时）；代理抽风则单次退回直连；两边都不通才落到腾讯行情兜底（价格更新、分红沿用上一份快照，页面上有「数据已 N 天未更新」提示）。工作流的探测步骤只是提前判断走哪条道，失败重试时也会强制带代理，不需要手工加参数
 - 为什么还要 `/api/snap` 代理：`raw.githubusercontent.com` 在国内又慢又不稳（1.5MB 实测要 50 秒），同源代理走 Cloudflare 边缘，顺手 gzip（A 股 1.47MB → 360KB，港股 196KB → 44KB）
 - **压缩交给边缘，函数和 Actions 都不碰**：Pages Functions 免费版 CPU 上限是 **10ms/次调用**，在函数里 gzip 一个 1.5MB 的 JSON 很可能超限被打断；而带 `Accept-Encoding` 的浏览器请求，Cloudflare 本来就会自动压缩一次。所以 `/api/snap` 只回 JSON 文本、由边缘自动压缩，data 分支也不再存 `.json.gz` —— 那份预压缩副本没有任何消费者，只会给每个交易日的提交多塞 170KB
 - 回源失败时返回上一次成功缓存的副本，宁可给旧数据也不给空白

@@ -98,7 +98,8 @@ jobs:
         timeout-minutes: 6
         env:
           SNAPSHOT_DIR: out
-          SNAPSHOT_PROXY: ${{ steps.probe.outputs.proxy }}
+          # 第一次已经失败过一次，重试直接吃代理，不再赌直连
+          SNAPSHOT_PROXY: ${{ steps.probe.outputs.proxy || 'https://guxi-6em.pages.dev/api/em' }}
         run: |
           set -o pipefail
           echo "第一次抓取失败，45 秒后重试" >> "$GITHUB_STEP_SUMMARY"
