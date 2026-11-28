@@ -8,10 +8,12 @@ on:
     - cron: "10 8 * * *"
     - cron: "35 23 * * *"
   workflow_dispatch:
-  # 改本文件时自动跑一次，用来验证改动（cron 漂移太大，不能靠定时验证）
+  # 改本文件或抓取脚本时自动跑一次，用来验证改动（cron 漂移太大，不能靠定时验证）
   push:
     paths:
       - ".github/workflows/snapshot.yml"
+      - "scripts/snapshot.mjs"
+      - "scripts/snapshot-qq.mjs"
 
 permissions:
   contents: write
@@ -50,40 +52,50 @@ jobs:
       # 抓取失败不该让整个流程变红：东财对 GitHub 出口 IP 有风控，
       # 偶发 502 或部分页拿不到是常态。这里允许失败，后面回填上一份快照继续发布，
       # 页面上本来就有「数据已 N 天未更新」的提示，不会让人误当当天行情。
-      # 先花 8 秒探一下 push2 通不通。东财封 GitHub 出口时，主脚本要跑满 16 分钟
-      # 超时才失败，再重试 6 分钟，白白浪费 22 分钟才轮到兜底。
+      # 东财对 Cloudflare 出口是「短窗口限流」：本机能单发 200，Runner 连续抓时整片 502，
+      # 几分钟后又自己恢复。所以探测不能一次定生死 —— 3 轮、每轮直连一次 + 代理两次，
+      # 轮间等 30 秒，最多约 4 分钟。只有 6 次全挂才判不可用、直接走腾讯兜底。
       - name: 探测东财是否可用
         id: probe
         run: |
-          code=$(curl -s -m 8 -o /dev/null -w "%{http_code}" -A "Mozilla/5.0" \
-            "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=1&po=0&np=1&fltt=2&invt=2&fid=f12&fs=m:0+t:6&fields=f12" || echo 000)
-          echo "push2 返回 $code"
-          if [ "$code" = "200" ]; then
-            echo "blocked=false" >> "$GITHUB_OUTPUT"
-            echo "proxy=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # 直连不行不代表源站不行：Runner 出口在境外，东财常按 IP 拦。
-          # 改走本站 /api/em 的边缘代理（Cloudflare 出口），通了就照常抓全量分红。
-          # 代理偶发 502（边缘函数瞬时抖动），单次探测定生死会把整轮误判成「都不可用」，
-          # 之前就因此白掉了一次全量抓取。这里重试 3 次，任意一次 200 就算通。
           target="https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=1&po=0&np=1&fltt=2&invt=2&fid=f12&fs=m:0+t:6&fields=f12"
-          pcode=""
-          for attempt in 1 2 3; do
-            pcode=$(curl -s -m 20 -o /dev/null -w "%{http_code}" \
-              "https://guxi-6em.pages.dev/api/em?u=$(printf %s "$target" | jq -sRr @uri)" || echo 000)
-            echo "代理第 $attempt 次返回 $pcode"
-            [ "$pcode" = "200" ] && break
-            sleep 4
+          enc=$(printf %s "$target" | jq -sRr @uri)
+          blocked=true
+          proxy=""
+          for round in 1 2 3; do
+            code=$(curl -s -m 10 -o /dev/null -w "%{http_code}" -A "Mozilla/5.0" "$target" || echo 000)
+            echo "第 $round 轮 直连返回 $code"
+            if [ "$code" = "200" ]; then
+              blocked=false
+              break
+            fi
+            # 直连不行不代表源站不行：Runner 出口在境外，东财常按 IP 拦。
+            # 改走本站 /api/em 的边缘代理（Cloudflare 出口），通了就照常抓全量分红。
+            # 代理偶发 502（边缘函数瞬时抖动），单次失败不算数，每轮给它两次机会。
+            pcode=""
+            for attempt in 1 2; do
+              pcode=$(curl -s -m 20 -o /dev/null -w "%{http_code}" "https://guxi-6em.pages.dev/api/em?u=$enc" || echo 000)
+              echo "第 $round 轮 代理第 $attempt 次返回 $pcode"
+              [ "$pcode" = "200" ] && break
+              sleep 3
+            done
+            if [ "$pcode" = "200" ]; then
+              blocked=false
+              proxy="https://guxi-6em.pages.dev/api/em"
+              break
+            fi
+            [ "$round" -lt 3 ] && sleep 30
           done
-          if [ "$pcode" = "200" ]; then
-            echo "blocked=false" >> "$GITHUB_OUTPUT"
-            echo "proxy=https://guxi-6em.pages.dev/api/em" >> "$GITHUB_OUTPUT"
-            echo "东财直连不可用（$code），改走边缘代理抓取" >> "$GITHUB_STEP_SUMMARY"
+          echo "blocked=$blocked" >> "$GITHUB_OUTPUT"
+          echo "proxy=$proxy" >> "$GITHUB_OUTPUT"
+          if [ "$blocked" = "false" ]; then
+            if [ -n "$proxy" ]; then
+              echo "东财直连不可用，改走边缘代理抓取" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "东财直连可用" >> "$GITHUB_STEP_SUMMARY"
+            fi
           else
-            echo "blocked=true" >> "$GITHUB_OUTPUT"
-            echo "proxy=" >> "$GITHUB_OUTPUT"
-            echo "东财直连与代理都不可用（$code / $pcode），本轮走腾讯兜底" >> "$GITHUB_STEP_SUMMARY"
+            echo "东财直连与代理 3 轮 6 次均不可用，本轮走腾讯兜底" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: 生成快照
