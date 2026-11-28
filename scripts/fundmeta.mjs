@@ -286,6 +286,9 @@ async function main() {
   //   funddetail.json —— 基金页读它取全称/经理/成立日/规模/基准
   //   mgrmap.json     —— 经理姓名 → id，fundmgr 靠它确定要抓谁
   const det = [];
+  // 业绩比较基准只用于搜索匹配，正文里从不展示，单独拆成 fundextra.json：
+  // 它占 funddetail 的 21%（857KB），放在首屏纯属浪费。
+  const extra = [];
   const mgrMap = Object.create(null);
   const mgrRows = [];
   for (const r of allRows) {
@@ -299,11 +302,11 @@ async function main() {
       s: r.s,
       jj: mgr.map((m) => m.n).join("、"),
       jjn: mgr.length,
-      bench: r.bench || "",
       idx: r.track || "",
       gs: r.gs,
       gn: r.gn
     });
+    if (r.bench) extra.push([r.c, r.bench]);
     for (const m of mgr) {
       if (!m || !m.id || !m.n) continue;
       if (!mgrMap[m.n]) {
@@ -323,6 +326,10 @@ async function main() {
       mode: pack.mode,
       rows: det
     })
+  );
+  fs.writeFileSync(
+    path.join(OUT_DIR, "fundextra.json"),
+    JSON.stringify({ v: 1, ts: Date.now(), count: extra.length, rows: extra })
   );
   // mgrmap 必须增量合并：本批只覆盖几千只基金，直接覆盖会把之前批次
   // 带来的经理丢掉，fundmgr 就会变少。以旧文件为底，新的补进去。

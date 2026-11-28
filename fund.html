@@ -235,6 +235,33 @@ tbody tr:hover{background:#FCFBF8;}
     });
   }
 
+  // 业绩比较基准（857KB，占 funddetail 的 21%）已从详情快照里拆到 fundextra.json。
+  // 它只参与搜索匹配、不展示，所以首屏之后补拉，拉完把 bench 并回行上；
+  // 用户已经在搜索的话，重画一次让新命中的行出现。
+  var extrasReady = false;
+  var extrasMap = null;
+  function applyExtras(rows){
+    if (!extrasMap || !rows) return;
+    for (var j = 0; j < rows.length; j++){
+      if (!rows[j].bench && extrasMap[rows[j].c]) rows[j].bench = extrasMap[rows[j].c];
+    }
+  }
+  function loadExtras(){
+    if (extrasReady) return Promise.resolve();
+    return get("fundextra").then(function(pack){
+      var map = Object.create(null);
+      var list = (pack && pack.rows) || [];
+      for (var i = 0; i < list.length; i++){
+        if (list[i] && list[i][0]) map[list[i][0]] = list[i][1] || "";
+      }
+      extrasMap = map;
+      extrasReady = true;
+      applyExtras(S.rows);
+      if (S.q.trim()) renderTable();
+      cachePut(S.rows, S.detailOk !== false);
+    }).catch(function(){ /* 拉不到就只是搜不到基准原文，不影响其它 */ });
+  }
+
   function fmtDays(d){
     if (!isNum(d) || d <= 0) return "—";
     var y = Math.floor(d / 365), m = Math.floor((d % 365) / 30);
@@ -243,7 +270,8 @@ tbody tr:hover{background:#FCFBF8;}
   }
 
   function get(f){
-    return fetch("/api/snap?f=" + f + "&v=2", { cache: "no-store" })
+    // v 是边缘缓存版本号：v3 起 funddetail 不再内嵌业绩基准（拆到 fundextra）
+    return fetch("/api/snap?f=" + f + "&v=3", { cache: "no-store" })
       .then(function(r){ if (!r.ok) throw new Error(f + "_" + r.status); return r.json(); });
   }
 
@@ -320,7 +348,7 @@ tbody tr:hover{background:#FCFBF8;}
 
       if (!rows.length) throw new Error("数据为空");
       paintRows(rows, detailOk);
-      // 等年限补完再落缓存，下次命中时「年限 ≥ N」就是立刻可用的
+      applyExtras(rows);   // 用户先搜索过的话，基准已经在了，直接并上
       loadExpYears(rows, nameToId, expById).then(function(){ cachePut(rows, detailOk); });
     }).catch(function(err){
       // 有缓存时不要再把已经画好的表盖成错误页
@@ -529,8 +557,16 @@ tbody tr:hover{background:#FCFBF8;}
   }
 
   function bind(){
-    $("q").addEventListener("input", function(e){ S.q = e.target.value; S.page = 1; renderTable(); });
-    $("theme").addEventListener("input", function(e){ S.theme = e.target.value; S.page = 1; renderTable(); });
+    $("q").addEventListener("input", function(e){
+      S.q = e.target.value; S.page = 1; renderTable();
+      // 业绩基准拆在 fundextra 里，只有真去搜索才需要它
+      if (S.q.trim() && !extrasReady) loadExtras();
+    });
+    $("theme").addEventListener("input", function(e){
+      S.theme = e.target.value; S.page = 1; renderTable();
+      // 真正读 bench 的是这个「主题/行业关键词」框，所以这里也要触发补拉
+      if (S.theme.trim() && !extrasReady) loadExtras();
+    });
     $("t").addEventListener("change", function(e){ S.t = e.target.value; S.page = 1; renderTable(); });
     $("mgr").addEventListener("change", function(e){ S.mgr = e.target.value; S.page = 1; renderTable(); });
     $("hideBad").addEventListener("change", function(e){ S.hideBad = e.target.checked; S.page = 1; renderTable(); });

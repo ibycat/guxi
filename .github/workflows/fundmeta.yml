@@ -57,7 +57,7 @@ jobs:
           mkdir -p out
           if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
             git fetch --depth=1 origin data
-            for f in a.json hk.json fundrank.json fundmeta.json funddetail.json mgrmap.json managers.json fundmgr.json; do
+            for f in a.json hk.json fundrank.json fundmeta.json funddetail.json fundextra.json mgrmap.json managers.json fundmgr.json; do
               git show "FETCH_HEAD:$f" > "out/$f" 2>/dev/null || rm -f "out/$f"
             done
             echo "已带回：$(ls -1 out | tr '\n' ' ')"
@@ -113,7 +113,7 @@ jobs:
           echo "目标 $TARGET 只（fundrank），本次覆盖 $NEW 只，门槛 $NEED"
           if [ "$NEW" -ge "$NEED" ]; then
             echo "已达到 $NEED，一并发布 funddetail（旧文件里的未成立/清盘份额会被替换掉）"
-            bash scripts/pushdata.sh fundmeta.json funddetail.json mgrmap.json
+            bash scripts/pushdata.sh fundmeta.json funddetail.json fundextra.json mgrmap.json
           else
             echo "还差 $((NEED - NEW)) 只，只发布 fundmeta/mgrmap，funddetail 继续用现有数据"
             bash scripts/pushdata.sh fundmeta.json mgrmap.json
