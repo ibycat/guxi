@@ -159,6 +159,9 @@ jobs:
         if: always()
         run: |
           set -e
+          # 两个文件都不存在时，下面的循环会全部 continue 并以 0 退出，校验就变成空转通过。
+          # 这里先硬断言至少有一个产物。
+          [ -s out/a.json ] || [ -s out/hk.json ] || { echo "没有任何快照产物（out/a.json 与 out/hk.json 都不存在）"; exit 1; }
           for f in out/a.json out/hk.json; do
             [ -s "$f" ] || continue
             node -e "const d=require('./$f'); const n = d.rows ? d.rows.length : (d.code ? d.code.split('|').filter(Boolean).length : 0); if(!n) { console.error('$f 没有数据'); process.exit(1) } console.log('$f ok', n, '行, 版本', d.v || 1)"
