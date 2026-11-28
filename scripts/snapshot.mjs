@@ -118,6 +118,7 @@ async function rawGet(url) {
 
   if (proxyFirst || directDead) {
     try {
+      await proxyPace();
       return await rawGetOnce(p);
     } catch (e) {
       if (directDead) throw e;      // 直连已判定不可用，不再浪费一次超时
@@ -135,6 +136,7 @@ async function rawGet(url) {
       directDead = true;
       console.error(`[net] 直连连续失败 ${directStreak} 次（${e.message}），本轮改用边缘代理`);
     }
+    await proxyPace();
     return rawGetOnce(p);            // 这一次先用代理兜住，不丢页
   }
 }
@@ -158,9 +160,20 @@ async function rawGetOnce(url) {
   return res.text();
 }
 
+let lastProxyAt = 0;
+// 代理出口是 Cloudflare，东财对它按「短窗口请求数」限流，突发一多就整片 502。
+// 每个代理请求之间至少隔 220ms，代价是整轮慢一点，换来的是不触发限流。
+async function proxyPace() {
+  const gap = 220 - (Date.now() - lastProxyAt);
+  if (gap > 0) await sleep(gap);
+  lastProxyAt = Date.now();
+}
+
 async function getText(url, tries = 3) {
   let last;
-  for (let i = 0; i < tries; i++) {
+  // 走代理时重试更耐心：502 多是十来秒的窗口，1 秒内连打三次毫无意义
+  const effTries = proxyFirst || directDead ? Math.max(tries, 5) : tries;
+  for (let i = 0; i < effTries; i++) {
     try {
       const text = await rawGet(url);
       const head = text.replace(/^\uFEFF/, "").trim().charAt(0);
@@ -168,7 +181,10 @@ async function getText(url, tries = 3) {
       return text;
     } catch (e) {
       last = e;
-      if (i + 1 < tries) await sleep(300 + i * 400 + Math.random() * 300);
+      if (i + 1 < effTries) {
+        const base = (proxyFirst || directDead) ? 1200 : 300;
+        await sleep(base + i * 700 + Math.random() * 400);
+      }
     }
   }
   throw last;
