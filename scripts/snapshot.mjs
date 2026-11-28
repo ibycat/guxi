@@ -289,6 +289,9 @@ async function buildA() {
   const FS_PARTS = ["m:0+t:6", "m:0+t:80", "m:1+t:2", "m:1+t:23"];
   const merged = [];
   let totalSum = 0, pagesSum = 0, okPagesSum = 0;
+  // 板块级缺失必须硬失败：以前失败的板块被 continue 掉，连 total 都不计入分母，
+  // 于是「已抓/应有」恒为 100%，缺掉整个深主板也能判成功并发布。
+  const failedBoards = [];
   for (const fsCode of FS_PARTS) {
     let part = null;
     for (const po of [0, 1]) {   // 升序被拒就换降序，参数组合不同有时能绕开
@@ -300,7 +303,11 @@ async function buildA() {
       }
       await sleep(1200);
     }
-    if (!part) continue;
+    if (!part) { failedBoards.push(fsCode); continue; }
+    if (part.rows.length < part.total * 0.9) {
+      failedBoards.push(`${fsCode} 不完整 ${part.rows.length}/${part.total}`);
+      continue;
+    }
     try {
       merged.push(...part.rows);
       totalSum += part.total;
@@ -308,9 +315,13 @@ async function buildA() {
       okPagesSum += part.okPages;
       console.log(`  ${fsCode}: ${part.rows.length}/${part.total}`);
     } catch (e) {
+      failedBoards.push(`${fsCode} 合并失败`);
       console.log(`  ${fsCode}: 合并失败 ${e && e.message}`);
     }
     await sleep(1500);
+  }
+  if (failedBoards.length) {
+    throw new Error(`板块缺失：${failedBoards.join(" / ")}，拒绝生成残缺快照（交给兜底并保留上一份）`);
   }
   const q = { rows: merged, total: totalSum, pages: pagesSum, okPages: okPagesSum };
   console.log(`[A] 行情 ${q.okPages}/${q.pages} 页，${q.rows.length}/${q.total} 只`);
@@ -607,8 +618,10 @@ async function buildHK() {
   console.log("[HK] 拉取港股通行情…");
   const q = await pullClist(FS_HK_GGT, FS_HK_FIELDS, 1);
   console.log(`[HK] 行情 ${q.okPages}/${q.pages} 页，${q.rows.length}/${q.total} 只`);
-  if (q.rows.length < q.total * 0.6) {
-    throw new Error(`行情严重缺失：${q.rows.length}/${q.total}`);
+  // 阈值与 A 股对齐到 90%：港股只有一个板块，60% 的放行线意味着 668 只掉到 400 只也算成功，
+  // 而兜底是以上一份为基准的，一旦放行残缺数据，下一轮只会更小。
+  if (q.rows.length < q.total * 0.9) {
+    throw new Error(`行情严重缺失：${q.rows.length}/${q.total}（低于 90%，改用兜底并保留上一份）`);
   }
   const partialHK = q.okPages < q.pages ? `${q.okPages}/${q.pages}` : "";
 

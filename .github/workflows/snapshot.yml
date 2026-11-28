@@ -155,6 +155,7 @@ jobs:
           test -s out/a.json || test -s out/hk.json
 
       - name: 校验产物是合法 JSON
+        id: validate
         if: always()
         run: |
           set -e
@@ -162,14 +163,30 @@ jobs:
             [ -s "$f" ] || continue
             node -e "const d=require('./$f'); const n = d.rows ? d.rows.length : (d.code ? d.code.split('|').filter(Boolean).length : 0); if(!n) { console.error('$f 没有数据'); process.exit(1) } console.log('$f ok', n, '行, 版本', d.v || 1)"
           done
+          # 行数环比：残缺血本不该走到这一步，但兜底/回填都可能顶上一份小文件，
+          # 这里再拦一次，跌超 10% 直接判校验失败（连带跳过推送）。
+          for b in a hk; do
+            [ -s "out/$b.json" ] || continue
+            [ -s "prev/$b.json" ] || continue
+            node -e "
+              const cur = require('./out/$b.json'), prev = require('./prev/$b.json');
+              const n = (d) => d.code ? String(d.code).split('|').filter(Boolean).length : (d.rows ? d.rows.length : 0);
+              const c = n(cur), p = n(prev);
+              console.log('$b 环比 ' + p + ' → ' + c);
+              if (p && c < p * 0.9) { console.error('$b 行数回退 ' + p + ' → ' + c + '，拒绝发布'); process.exit(1); }
+            "
+          done
+
           # 预压缩产物必须是合法 gzip（魔术字节 1f 8b）
           for g in out/a.json.gz out/hk.json.gz; do
             [ -s "$g" ] || continue
             head -c 2 "$g" | od -An -tx1 | grep -q "1f 8b" && echo "$g gzip ok" || { echo "$g 不是合法 gzip"; exit 1; }
           done
 
+      # 只有校验通过才推送。原来这里是 if: always()，校验失败照样把半截 JSON 推上分支，
+      # 而下一轮的 prev 就是那份坏文件，坏数据会被一直继承下去。
       - name: 推送到 data 分支（安全合并推送，不污染 main 历史）
-        if: always()
+        if: always() && steps.validate.outcome == 'success'
         run: bash scripts/pushdata.sh a.json hk.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
