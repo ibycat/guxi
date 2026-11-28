@@ -26,6 +26,11 @@ on:
 permissions:
   contents: write
 
+# 一次要跑 20~30 分钟，重叠跑会互相抢 data 分支的推送（pushdata 重试 4 次后直接失败）
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest

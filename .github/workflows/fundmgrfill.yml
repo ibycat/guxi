@@ -1,9 +1,16 @@
 name: fundmgrfill
 
 # 补齐 fundmgr 的空洞：按基金维度反查经理，补上任职天数与在管规模。
-# 一次性任务，也可以在 fundmgr 之后按需手动跑。
+#
+# 需要定期跑，不能只当一次性任务：新成立的基金每周都会出现在排行榜里，
+# 而经理页还没有它们的记录，缺口会持续长出来（11-25 那次一天丢 1,211 只）。
+# 排到 fundmgr（05:10 UTC）之后，跑完把新补的条目写回 fundmgr.json，
+# fundmgr 的 merge 逻辑会保留它们。
 
 on:
+  schedule:
+    # 每周日 05:40 UTC（北京 13:40），紧跟当天的 fundmgr
+    - cron: "40 5 * * 0"
   workflow_dispatch:
   push:
     paths:

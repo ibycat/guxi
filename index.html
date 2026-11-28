@@ -432,43 +432,6 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     return Array.isArray(d) ? d : Object.keys(d).map(function(k){ return d[k]; });
   }
 
-  function loadQuotes(onTick){
-    var pz = 100;
-    var base = {
-      po: 0, np: 1, fltt: 2, invt: 2, fid: "f12", fs: FS, fields: FIELDS
-    };
-    return withRetry(function(){
-      return request(QUOTE_API, Object.assign({}, base, { pn: 1, pz: pz, _: Date.now() }), "cb");
-    }).then(function(first){
-      var rows = normDiff(first);
-      var total = (first && first.data && first.data.total) || rows.length;
-      var pages = Math.max(1, Math.ceil(total / pz));
-      onTick && onTick(1, pages);
-      var rest = [];
-      for (var p = 2; p <= pages; p++) rest.push(p);
-      var done = 1;
-      var failed = [];
-      function pull(p){
-        return withRetry(function(){
-          return request(QUOTE_API, Object.assign({}, base, { pn: p, pz: pz, _: Date.now() }), "cb");
-        }, 2).then(function(j){
-          var add = normDiff(j);
-          for (var i = 0; i < add.length; i++) rows.push(add[i]);
-        });
-      }
-      return runPool(rest, 6, function(p){
-        return pull(p).catch(function(){ failed.push(p); }).then(function(){
-          done++; onTick && onTick(done, pages);
-        });
-      }).then(function(){
-        if (!failed.length) return null;
-        return runPool(failed, 2, function(p){
-          return pull(p).catch(function(){ fails++; });
-        });
-      }).then(function(){ return rows; });
-    });
-  }
-
   function loadBonusPeriod(period){
     var base = {
       reportName: "RPT_SHAREBONUS_DET",
@@ -508,47 +471,6 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     });
   }
 
-  function buildPeriods(){
-    var y = TODAY.getFullYear();
-    var qs = ["12-31", "09-30", "06-30", "03-31"];
-    var ttm = [];
-    var from = new Date(TODAY.getTime() - 548 * DAY);
-    for (var yy = y; yy >= y - 2; yy--){
-      for (var i = 0; i < qs.length; i++){
-        var p = yy + "-" + qs[i];
-        var d = new Date(p + "T00:00:00");
-        if (d <= TODAY && d >= from) ttm.push(p);
-      }
-    }
-    var seen = {};
-    ttm.forEach(function(p){ seen[p] = 1; });
-    var hist = [];
-    for (var k = 1; k <= HISTORY_YEARS; k++){
-      var hp = (y - k) + "-12-31";
-      if (!seen[hp]) hist.push(hp);
-    }
-    return { ttm: ttm, hist: hist };
-  }
-
-  function loadBonus(periods, onTick){
-    var out = [];
-    var done = 0;
-    var failedPeriods = [];
-    function merge(recs){
-      for (var i = 0; i < recs.length; i++) out.push(recs[i]);
-    }
-    return runPool(periods, 2, function(p){
-      return loadBonusPeriod(p).then(merge).catch(function(){ failedPeriods.push(p); }).then(function(){
-        done++; onTick && onTick(done, periods.length);
-      });
-    }).then(function(){
-      if (!failedPeriods.length) return null;
-      return runPool(failedPeriods, 1, function(p){
-        return loadBonusPeriod(p).then(merge).catch(function(){ fails++; });
-      });
-    }).then(function(){ return out; });
-  }
-
   function pct(v, d){
     if (v == null || !isFinite(v)) return "—";
     return (v * 100).toFixed(d == null ? 2 : d) + "%";
@@ -569,115 +491,11 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     return isNaN(d.getTime()) ? null : d;
   }
 
-  function buildRows(quotes, recs){
-    var byCode = {};
-    for (var i = 0; i < recs.length; i++){
-      var r = recs[i];
-      var code = r.SECURITY_CODE;
-      if (!code) continue;
-      var raw = Number(r.PRETAX_BONUS_RMB);
-      var dps = isFinite(raw) && raw > 0 ? raw / 10 : 0;
-      if (!dps) continue;
-      if (!byCode[code]) byCode[code] = [];
-      byCode[code].push({
-        period: String(r.REPORT_DATE || "").slice(0, 10),
-        dps: dps,
-        ex: String(r.EX_DIVIDEND_DATE || r.EQUITY_RECORD_DATE || "").slice(0, 10),
-        eps: Number(r.BASIC_EPS) || 0,
-        prog: r.ASSIGN_PROGRESS || ""
-      });
-    }
-
-    var y0 = TODAY.getFullYear();
-    var winFrom = new Date(TODAY.getTime() - 365 * DAY);
-    var rows = [];
-
-    for (var q = 0; q < quotes.length; q++){
-      var it = quotes[q];
-      var code2 = it.f12;
-      if (!code2) continue;
-      var price = Number(it.f2);
-      if (!isFinite(price) || price <= 0) continue;
-      var name = it.f14 || code2;
-      var ind = String(it.f100 || "").replace(/[ⅠⅡⅢ]+$/, "");
-
-      var listDate = null;
-      var ld = Number(it.f26);
-      if (isFinite(ld) && ld > 19000101){
-        listDate = new Date(Math.floor(ld / 10000) + "-" + String(Math.floor(ld / 100) % 100).padStart(2, "0") + "-01T00:00:00");
-      }
-
-      var rr = byCode[code2] || [];
-      var impl = [];
-      for (var z = 0; z < rr.length; z++){
-        var x = rr[z];
-        if (x.prog.indexOf("实施") >= 0) impl.push(x);
-      }
-
-      var ttm = 0, ttmCnt = 0, annualInWin = 0;
-      for (var a = 0; a < impl.length; a++){
-        var ex = parseDate(impl[a].ex);
-        if (ex && ex >= winFrom && ex <= TODAY){
-          ttm += impl[a].dps; ttmCnt++;
-          if (impl[a].period.slice(5) === "12-31") annualInWin++;
-        }
-      }
-      ttm = price > 0 ? ttm / price : 0;
-
-      var annuals = [];
-      for (var b = 0; b < impl.length; b++){
-        if (impl[b].period.slice(5) === "12-31") annuals.push(impl[b]);
-      }
-      annuals.sort(function(m, n){ return n.period.localeCompare(m.period); });
-
-      var lastA = annuals.length ? annuals[0] : null;
-      var last = lastA ? lastA.dps / price : 0;
-      var payout = (lastA && lastA.eps > 0) ? lastA.dps / lastA.eps : null;
-
-      var yearSet = {};
-      for (var c = 0; c < annuals.length; c++) yearSet[+annuals[c].period.slice(0, 4)] = 1;
-
-      var consec = 0;
-      for (var yy = y0 - 1; yearSet[yy]; yy--) consec++;
-      var years = 0;
-      for (var k = 1; k <= HISTORY_YEARS; k++) if (yearSet[y0 - k]) years++;
-
-      var sum3 = 0, n3 = 0;
-      for (var t = 1; t <= 3; t++){
-        var found = null;
-        for (var u = 0; u < annuals.length; u++){
-          if (+annuals[u].period.slice(0, 4) === y0 - t){ found = annuals[u]; break; }
-        }
-        if (found){ sum3 += found.dps; n3++; }
-      }
-      var avg3 = n3 ? (sum3 / n3) / price : 0;
-
-      var flags = [];
-      if (ttm <= 0) flags.push(["none", "无分红"]);
-      if (ttm > 0 && consec <= 1) flags.push(["warn", "分红不连续"]);
-      if (payout != null && payout > 0.9) flags.push(["warn", "分红率>90%"]);
-      if (ttm > 0.08 && CYCLE[ind]) flags.push(["warn", "周期高位"]);
-      if (ttm > 0.10) flags.push(["bad", "需核验"]);
-      if (annualInWin >= 2) flags.push(["info", "含2次年报"]);
-      if (ttm >= 0.03 && consec >= 5 && payout != null && payout >= 0.2 && payout <= 0.75) flags.push(["good", "稳健"]);
-
-      rows.push({
-        code: code2, name: name, price: price,
-        chg: Number(it.f3), pe: Number(it.f9), pb: Number(it.f23),
-        mcap: Number(it.f20), ind: ind, listDate: listDate,
-        ttm: ttm, ttmCnt: ttmCnt, last: last, avg3: avg3,
-        payout: payout, consec: consec, years: years,
-        flags: flags, records: impl.slice().sort(function(m, n){ return n.period.localeCompare(m.period); })
-      });
-    }
-    return rows;
-  }
-
   /* ---------------- 预生成快照 ----------------
-     由 GitHub Actions 每 30 分钟生成，推到独立的 data 分支，
-     页面用 raw.githubusercontent 直读（全球 CDN + gzip），不再实时打东财。
-     这样做同时解决两件事：首屏速度、以及东财对 Cloudflare 出口 IP 的封禁。
-     快照拿不到时自动回退到实时接口。 */
+     由 GitHub Actions 每交易日生成两次（北京 16:10 收盘后、次日 07:35 盘前），
+     推到独立的 data 分支。页面首选同源 /api/snap（边缘缓存 + 透传 gzip），
+     拿不到时退回 raw.githubusercontent 直读，再不行才回落实时接口。
+     这样做同时解决两件事：首屏速度、以及东财对 Cloudflare 出口 IP 的封禁。 */
   var SNAP_RAW = "https://raw.githubusercontent.com/ibycat/guxi/data/";
 
   function now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
@@ -897,6 +715,12 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
   }
   function isNew(r){
     return r.listDate ? (TODAY - r.listDate) < 3 * 365 * DAY : false;
+  }
+
+  function esc(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
   }
 
   // 搜索归一：东财的股票名里混着全角字母和多余空格（「万  科Ａ」），
@@ -1127,9 +951,17 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     var slice = list.slice(start, start + S.size);
 
     if (!total){
-      var tip = S.preset === "steady"
-        ? "当前口径下没有符合「稳健高息」的标的（需带「稳健」标记，标记由快照按股息率、连续分红年数、分红率区间判定）。<br>可以点「全部」，或切回 TTM 口径再看。"
-        : "没有符合条件的标的，试着放宽筛选";
+      // 零结果的归因要说对：有搜索词时预设和次新本来就不生效，
+      // 再说「没有稳健标的、可以点全部」只会误导（点完全部还是 0）。
+      var tip;
+      if (S.q.trim()){
+        tip = "没有匹配「" + esc(S.q.trim()) + "」的标的。搜索按全市场匹配，不受预设与次新限制；" +
+          "<br>请检查代码或名称（支持部分匹配），或清空搜索框。";
+      } else if (S.preset === "steady"){
+        tip = "当前口径下没有符合「稳健高息」的标的（需带「稳健」标记，标记由快照按股息率、连续分红年数、分红率区间判定）。<br>可以点「全部」，或切回 TTM 口径再看。";
+      } else {
+        tip = "没有符合条件的标的，试着放宽筛选";
+      }
       $("tbody").innerHTML = '<tr><td colspan="11"><div class="skel">' + tip + "</div></td></tr>";
     } else {
       var html = "";
@@ -1343,30 +1175,6 @@ footer{max-width:1280px; margin:20px auto 0; padding:0 20px; font-size:11px; col
     $("tbody").innerHTML = '<tr><td colspan="11"><div class="error">快照数据暂时取不到（' +
       (err && err.message ? err.message : "未知错误") +
       "）。<br>页面数据每天更新一次，稍后再点右上「刷新」。</div></td></tr>";
-  }
-
-  function recomputeYields(){
-    for (var i = 0; i < S.rows.length; i++){
-      var r = S.rows[i];
-      if (!r.price || r.price <= 0) continue;
-      var ttmDps = 0, annualDps = 0, n3 = 0, sum3 = 0;
-      for (var j = 0; j < r.records.length; j++){
-        var x = r.records[j];
-        if (x.prog.indexOf("实施") < 0) continue;
-        var d = parseDate(x.ex);
-        if (d && d >= new Date(TODAY.getTime() - 365 * DAY) && d <= TODAY) ttmDps += x.dps;
-        if (x.period.slice(5) === "12-31"){
-          var yy = +x.period.slice(0, 4);
-          if (yy <= TODAY.getFullYear() - 1 && yy > TODAY.getFullYear() - 4){
-            sum3 += x.dps; n3++;
-            if (!annualDps || x.period === (TODAY.getFullYear() - 1) + "-12-31") annualDps = x.dps;
-          }
-        }
-      }
-      if (ttmDps > 0) r.ttm = ttmDps / r.price;
-      if (annualDps > 0) r.last = annualDps / r.price;
-      if (n3) r.avg3 = (sum3 / n3) / r.price;
-    }
   }
 
   function exportCsv(){

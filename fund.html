@@ -494,7 +494,7 @@ tbody tr:hover{background:#FCFBF8;}
         var rc = (r.dead || r.odd) ? null : S.range.map[r.c];
         row.push(rc == null ? "" : rc);
       }
-      row.push(r.est || "", '"' + String(r.full).replace(/"/g, '""') + '"');
+      row.push(r.est || "", '"' + String(r.full || "").replace(/"/g, '""') + '"');
       lines.push(row.join(","));
     }
     var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
